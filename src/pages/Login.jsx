@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 export default function Login() {
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
+  const [mode, setMode] = useState('login')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -19,7 +20,12 @@ export default function Login() {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
       } else {
-        const { error } = await supabase.auth.signUp({ email, password })
+        if (!name.trim()) throw new Error('이름을 입력해주세요.')
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name: name.trim() } },
+        })
         if (error) throw error
         setInfo('가입 확인 이메일을 보냈습니다. 메일함을 확인한 뒤 로그인해주세요.')
       }
@@ -40,6 +46,18 @@ export default function Login() {
         {info && <div className="auth-error" style={{ color: 'var(--plan)', background: 'var(--plan-bg)', borderColor: 'var(--plan)' }}>{info}</div>}
 
         <form onSubmit={handleSubmit}>
+          {mode === 'signup' && (
+            <div className="field">
+              <label>이름</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="담당자 표시에 사용될 이름"
+                required
+              />
+            </div>
+          )}
           <div className="field">
             <label>이메일</label>
             <input

@@ -32,6 +32,7 @@ export default function Board({ session }) {
   const navigate = useNavigate()
   const [project, setProject] = useState(null)
   const [tasks, setTasks] = useState([])
+  const [teamMembers, setTeamMembers] = useState([])
   const [activeCats, setActiveCats] = useState(new Set(CAT_ORDER))
   const [activeAssignee, setActiveAssignee] = useState('all')
   const [formOpen, setFormOpen] = useState(false)
@@ -41,9 +42,17 @@ export default function Board({ session }) {
   const [dragging, setDragging] = useState(null)
   const gridRefs = useRef({})
 
+  const [assigneeOpen, setAssigneeOpen] = useState(false)
+  const [assigneeError, setAssigneeError] = useState('')
+  const [assigneeShake, setAssigneeShake] = useState(false)
+
+  const [periodOpen, setPeriodOpen] = useState(false)
+  const [periodForm, setPeriodForm] = useState({ start_date: '', end_date: '' })
+
   useEffect(() => {
     loadProject()
     loadTasks()
+    loadTeamMembers()
     const channel = supabase
       .channel(`tasks-${projectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
@@ -61,24 +70,18 @@ export default function Board({ session }) {
     const { data, error } = await supabase.from('tasks').select('*').eq('project_id', projectId).order('start_date')
     if (!error) setTasks(data)
   }
+  async function loadTeamMembers() {
+    const { data, error } = await supabase.from('profiles').select('name').order('name')
+    if (!error) setTeamMembers((data || []).map((r) => r.name).filter(Boolean))
+  }
 
   const range = useMemo(() => {
-    if (tasks.length === 0) {
-      const t = todayISO()
-      return { start: addDays(t, -3), end: addDays(t, 14) }
+    if (project?.start_date && project?.end_date) {
+      return { start: project.start_date, end: project.end_date }
     }
-    let min = tasks[0].start_date, max = tasks[0].end_date
-    tasks.forEach((t) => {
-      if (t.start_date < min) min = t.start_date
-      if (t.end_date > max) max = t.end_date
-    })
-    min = addDays(min, -3)
-    max = addDays(max, 4)
-    const today = todayISO()
-    if (today < min) min = addDays(today, -3)
-    if (today > max) max = addDays(today, 4)
-    return { start: min, end: max }
-  }, [tasks])
+    const t = todayISO()
+    return { start: addDays(t, -3), end: addDays(t, 30) }
+  }, [project])
 
   const totalDays = daysBetween(range.start, range.end) + 1
   const trackWidth = totalDays * DAY_W
@@ -89,6 +92,11 @@ export default function Board({ session }) {
     () => Array.from(new Set(tasks.map((t) => t.assignee).filter(Boolean))).sort(),
     [tasks]
   )
+  const assigneeSuggestions = useMemo(() => {
+    const q = form.assignee.trim()
+    if (!q) return []
+    return teamMembers.filter((m) => m.includes(q)).slice(0, 6)
+  }, [form.assignee, teamMembers])
 
   const filteredTasks = tasks.filter((t) => activeAssignee === 'all' || t.assignee === activeAssignee)
   const dueSoonCount = filteredTasks.filter(isDueSoon).length
@@ -110,6 +118,8 @@ export default function Board({ session }) {
   function openAddForm() {
     setEditingId(null)
     setForm(emptyForm)
+    setAssigneeError('')
+    setAssigneeOpen(false)
     setFormOpen(true)
   }
   function openEditForm(t) {
@@ -118,16 +128,59 @@ export default function Board({ session }) {
       title: t.title, category: t.category, assignee: t.assignee || '',
       status: t.status, start_date: t.start_date, end_date: t.end_date, description: t.description || '',
     })
+    setAssigneeError('')
+    setAssigneeOpen(false)
     setDetailTask(null)
     setFormOpen(true)
+  }
+
+  function handleAssigneeChange(e) {
+    const v = e.target.value
+    setForm((f) => ({ ...f, assignee: v }))
+    setAssigneeError('')
+    const trimmed = v.trim()
+    if (!trimmed) {
+      setAssigneeOpen(false)
+    } else if (teamMembers.includes(trimmed)) {
+      setAssigneeOpen(false)
+    } else {
+      setAssigneeOpen(true)
+    }
+  }
+  function selectAssignee(name) {
+    setForm((f) => ({ ...f, assignee: name }))
+    setAssigneeError('')
+    setAssigneeOpen(false)
+  }
+  function handleAssigneeBlur(e) {
+    const v = e.target.value
+    setTimeout(() => {
+      setAssigneeOpen(false)
+      const trimmed = v.trim()
+      if (trimmed && !teamMembers.includes(trimmed)) {
+        setAssigneeError('등록되지 않은 담당자입니다')
+      } else {
+        setAssigneeError('')
+      }
+    }, 120)
+  }
+  function triggerAssigneeShake() {
+    setAssigneeShake(true)
+    setTimeout(() => setAssigneeShake(false), 400)
   }
 
   async function saveTask(e) {
     e.preventDefault()
     if (!form.title.trim()) { alert('업무 제목을 입력하세요.'); return }
     if (!form.start_date || !form.end_date || form.start_date > form.end_date) { alert('시작일과 종료일을 확인하세요.'); return }
+    const trimmedAssignee = form.assignee.trim()
+    if (trimmedAssignee && !teamMembers.includes(trimmedAssignee)) {
+      setAssigneeError('등록되지 않은 담당자입니다')
+      triggerAssigneeShake()
+      return
+    }
     const payload = {
-      title: form.title.trim(), category: form.category, assignee: form.assignee.trim(),
+      title: form.title.trim(), category: form.category, assignee: trimmedAssignee,
       status: form.status, start_date: form.start_date, end_date: form.end_date,
       description: form.description.trim(), project_id: projectId, created_by: session.user.id,
     }
@@ -146,6 +199,21 @@ export default function Board({ session }) {
     await supabase.from('tasks').delete().eq('id', editingId)
     setFormOpen(false)
     loadTasks()
+  }
+
+  function openPeriodForm() {
+    setPeriodForm({ start_date: project.start_date, end_date: project.end_date })
+    setPeriodOpen(true)
+  }
+  async function savePeriod(e) {
+    e.preventDefault()
+    if (!periodForm.start_date || !periodForm.end_date || periodForm.start_date > periodForm.end_date) {
+      alert('프로젝트 기간을 확인해주세요.')
+      return
+    }
+    await supabase.from('projects').update({ start_date: periodForm.start_date, end_date: periodForm.end_date }).eq('id', projectId)
+    setPeriodOpen(false)
+    loadProject()
   }
 
   function computeDayFromEvent(e, cat) {
@@ -177,6 +245,8 @@ export default function Board({ session }) {
           const max = Math.max(prev.startDay, prev.currentDay)
           setEditingId(null)
           setForm({ ...emptyForm, category: prev.cat, start_date: addDays(range.start, min), end_date: addDays(range.start, max) })
+          setAssigneeError('')
+          setAssigneeOpen(false)
           setFormOpen(true)
         }
         return null
@@ -198,7 +268,10 @@ export default function Board({ session }) {
       <div className="topbar">
         <div>
           <h1>{project?.name || '불러오는 중...'}</h1>
-          <div className="sub">{range.start.replace(/-/g, '.')} — {range.end.replace(/-/g, '.')}</div>
+          <div className="sub">
+            {range.start.replace(/-/g, '.')} — {range.end.replace(/-/g, '.')}
+            {project && <span className="period-edit-link" onClick={openPeriodForm}>기간 수정</span>}
+          </div>
         </div>
         <button className="btn primary" onClick={openAddForm}>+ 새 일정 추가</button>
       </div>
@@ -342,12 +415,25 @@ export default function Board({ session }) {
               </div>
             </div>
             <div className="field-row">
-              <div className="field">
+              <div className="field assignee-field">
                 <label>담당자</label>
-                <input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} placeholder="담당자 이름" list="assignee-list" />
-                <datalist id="assignee-list">
-                  {assignees.map((a) => <option key={a} value={a} />)}
-                </datalist>
+                <input
+                  value={form.assignee}
+                  onChange={handleAssigneeChange}
+                  onFocus={() => form.assignee.trim() && assigneeSuggestions.length > 0 && setAssigneeOpen(true)}
+                  onBlur={handleAssigneeBlur}
+                  placeholder="담당자 이름 검색"
+                  autoComplete="off"
+                  className={assigneeShake ? 'shake' : ''}
+                />
+                {assigneeOpen && assigneeSuggestions.length > 0 && (
+                  <div className="autocomplete-dropdown">
+                    {assigneeSuggestions.map((name) => (
+                      <div key={name} className="autocomplete-item" onMouseDown={() => selectAssignee(name)}>{name}</div>
+                    ))}
+                  </div>
+                )}
+                {assigneeError && <div className="field-error">{assigneeError}</div>}
               </div>
               <div className="field">
                 <label>상태</label>
@@ -375,6 +461,28 @@ export default function Board({ session }) {
             <div className="modal-actions">
               {editingId && <button type="button" className="btn danger" onClick={deleteTask}>삭제</button>}
               <button type="button" className="btn" onClick={() => setFormOpen(false)}>취소</button>
+              <button type="submit" className="btn primary">저장</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`overlay ${periodOpen ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setPeriodOpen(false)}>
+        <div className="modal">
+          <h2>프로젝트 기간 수정</h2>
+          <form onSubmit={savePeriod}>
+            <div className="field-row">
+              <div className="field">
+                <label>시작일</label>
+                <input type="date" value={periodForm.start_date} onChange={(e) => setPeriodForm({ ...periodForm, start_date: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>종료일</label>
+                <input type="date" value={periodForm.end_date} onChange={(e) => setPeriodForm({ ...periodForm, end_date: e.target.value })} />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setPeriodOpen(false)}>취소</button>
               <button type="submit" className="btn primary">저장</button>
             </div>
           </form>

@@ -2,12 +2,23 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+function addDays(iso, n) {
+  const d = new Date(iso)
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Projects({ session }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [startDate, setStartDate] = useState(todayISO())
+  const [endDate, setEndDate] = useState(addDays(todayISO(), 30))
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -27,14 +38,19 @@ export default function Projects({ session }) {
   async function createProject(e) {
     e.preventDefault()
     if (!name.trim()) return
+    if (!startDate || !endDate || startDate > endDate) { alert('프로젝트 기간을 확인해주세요.'); return }
     const { error } = await supabase.from('projects').insert({
       name: name.trim(),
       description: description.trim(),
+      start_date: startDate,
+      end_date: endDate,
       created_by: session.user.id,
     })
     if (!error) {
       setName('')
       setDescription('')
+      setStartDate(todayISO())
+      setEndDate(addDays(todayISO(), 30))
       setShowForm(false)
       loadProjects()
     }
@@ -71,7 +87,9 @@ export default function Projects({ session }) {
               <button className="project-delete-btn" onClick={(e) => deleteProject(e, p)} title="프로젝트 삭제" aria-label="프로젝트 삭제">×</button>
               <h3>{p.name}</h3>
               <p>{p.description || '설명이 없습니다.'}</p>
-              <div className="meta">{new Date(p.created_at).toLocaleDateString('ko-KR')} 생성</div>
+              <div className="meta">
+                {p.start_date && p.end_date ? `${p.start_date.replace(/-/g, '.')} — ${p.end_date.replace(/-/g, '.')}` : `${new Date(p.created_at).toLocaleDateString('ko-KR')} 생성`}
+              </div>
             </div>
           ))}
         </div>
@@ -88,6 +106,16 @@ export default function Projects({ session }) {
             <div className="field">
               <label>설명</label>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="프로젝트에 대한 간단한 설명" />
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>시작일</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>종료일</label>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </div>
             </div>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setShowForm(false)}>취소</button>

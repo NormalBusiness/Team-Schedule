@@ -10,8 +10,17 @@ create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   description text,
+  start_date date not null default current_date,
+  end_date date not null default (current_date + 30),
   created_at timestamptz default now(),
   created_by uuid references auth.users(id)
+);
+
+-- 팀원 프로필 (회원가입 시 이름 저장)
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz default now()
 );
 
 -- 일정(업무) 테이블
@@ -32,6 +41,7 @@ create table if not exists tasks (
 -- 행 수준 보안 활성화
 alter table projects enable row level security;
 alter table tasks enable row level security;
+alter table profiles enable row level security;
 
 -- 로그인한 팀원은 모든 프로젝트/일정을 읽고 쓸 수 있음
 create policy "team members full access on projects"
@@ -43,6 +53,36 @@ create policy "team members full access on tasks"
   on tasks for all
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
+
+create policy "team members can view all profiles"
+  on profiles for select
+  using (auth.role() = 'authenticated');
+
+create policy "users can insert own profile"
+  on profiles for insert
+  with check (auth.uid() = id);
+
+create policy "users can update own profile"
+  on profiles for update
+  using (auth.uid() = id);
+
+-- 회원가입 시 auth.users에 새 행이 생기면 자동으로 profiles에도 이름을 넣어주는 트리거
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, name)
+  values (new.id, coalesce(new.raw_user_meta_data->>'name', new.email));
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 -- 실시간 동기화를 위해 tasks 테이블을 realtime publication에 추가
 alter publication supabase_realtime add table tasks;
