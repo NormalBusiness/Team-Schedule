@@ -69,3 +69,4 @@ team-schedule/
       Projects.jsx        ← 프로젝트 목록
       Board.jsx           ← 간트 차트 보드
 ```
+# Team-Schedule
