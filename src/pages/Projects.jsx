@@ -40,6 +40,13 @@ export default function Projects({ session }) {
     }
   }
 
+  async function deleteProject(e, project) {
+    e.stopPropagation()
+    if (!confirm(`"${project.name}" 프로젝트를 삭제할까요?\n포함된 모든 일정도 함께 삭제되며, 되돌릴 수 없습니다.`)) return
+    await supabase.from('projects').delete().eq('id', project.id)
+    loadProjects()
+  }
+
   return (
     <div className="page-wrap">
       <div className="topbar">
@@ -61,6 +68,7 @@ export default function Projects({ session }) {
         <div className="project-grid">
           {projects.map((p) => (
             <div className="project-card" key={p.id} onClick={() => navigate(`/board/${p.id}`)}>
+              <button className="project-delete-btn" onClick={(e) => deleteProject(e, p)} title="프로젝트 삭제" aria-label="프로젝트 삭제">×</button>
               <h3>{p.name}</h3>
               <p>{p.description || '설명이 없습니다.'}</p>
               <div className="meta">{new Date(p.created_at).toLocaleDateString('ko-KR')} 생성</div>

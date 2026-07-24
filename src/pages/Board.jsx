@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
-const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍' }
+const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트' }
+const CAT_ORDER = ['art', 'plan', 'dev', 'effect']
 const STATUS_LABEL = { todo: '예정', doing: '진행중', done: '완료' }
 const DAY_W = 34
 
@@ -17,6 +18,12 @@ function addDays(iso, n) {
   d.setDate(d.getDate() + n)
   return d.toISOString().slice(0, 10)
 }
+function isOverdue(t) {
+  return t.status !== 'done' && t.end_date < todayISO()
+}
+function isDueSoon(t) {
+  return t.status !== 'done' && !isOverdue(t) && daysBetween(todayISO(), t.end_date) <= 2
+}
 
 const emptyForm = { title: '', category: 'art', assignee: '', status: 'todo', start_date: todayISO(), end_date: addDays(todayISO(), 3), description: '' }
 
@@ -25,11 +32,14 @@ export default function Board({ session }) {
   const navigate = useNavigate()
   const [project, setProject] = useState(null)
   const [tasks, setTasks] = useState([])
-  const [activeCats, setActiveCats] = useState(new Set(['art', 'plan', 'dev']))
+  const [activeCats, setActiveCats] = useState(new Set(CAT_ORDER))
+  const [activeAssignee, setActiveAssignee] = useState('all')
   const [formOpen, setFormOpen] = useState(false)
   const [detailTask, setDetailTask] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const [dragging, setDragging] = useState(null)
+  const gridRefs = useRef({})
 
   useEffect(() => {
     loadProject()
@@ -75,8 +85,14 @@ export default function Board({ session }) {
   const todayOffset = daysBetween(range.start, todayISO())
   const todayLeft = todayOffset * DAY_W + DAY_W / 2
 
-  const visibleTasks = tasks.filter((t) => activeCats.has(t.category))
-  const catOrder = ['art', 'plan', 'dev']
+  const assignees = useMemo(
+    () => Array.from(new Set(tasks.map((t) => t.assignee).filter(Boolean))).sort(),
+    [tasks]
+  )
+
+  const filteredTasks = tasks.filter((t) => activeAssignee === 'all' || t.assignee === activeAssignee)
+  const dueSoonCount = filteredTasks.filter(isDueSoon).length
+  const overdueCount = filteredTasks.filter(isOverdue).length
 
   function toggleCat(cat) {
     setActiveCats((prev) => {
@@ -132,6 +148,48 @@ export default function Board({ session }) {
     loadTasks()
   }
 
+  function computeDayFromEvent(e, cat) {
+    const el = gridRefs.current[cat]
+    if (!el) return 0
+    const rect = el.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    let day = Math.floor(x / DAY_W)
+    if (day < 0) day = 0
+    if (day > totalDays - 1) day = totalDays - 1
+    return day
+  }
+  function handleGridMouseDown(cat, e) {
+    e.preventDefault()
+    const day = computeDayFromEvent(e, cat)
+    setDragging({ cat, startDay: day, currentDay: day })
+  }
+
+  useEffect(() => {
+    if (!dragging) return
+    function onMove(e) {
+      const day = computeDayFromEvent(e, dragging.cat)
+      setDragging((prev) => (prev ? { ...prev, currentDay: day } : prev))
+    }
+    function onUp() {
+      setDragging((prev) => {
+        if (prev) {
+          const min = Math.min(prev.startDay, prev.currentDay)
+          const max = Math.max(prev.startDay, prev.currentDay)
+          setEditingId(null)
+          setForm({ ...emptyForm, category: prev.cat, start_date: addDays(range.start, min), end_date: addDays(range.start, max) })
+          setFormOpen(true)
+        }
+        return null
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [dragging, range.start])
+
   return (
     <div className="page-wrap">
       <div className="board-topbar">
@@ -145,79 +203,104 @@ export default function Board({ session }) {
         <button className="btn primary" onClick={openAddForm}>+ 새 일정 추가</button>
       </div>
 
+      {(overdueCount > 0 || dueSoonCount > 0) && (
+        <div className="board-alert">
+          {overdueCount > 0 && <span className="alert-pill overdue">기한 초과 {overdueCount}건</span>}
+          {dueSoonCount > 0 && <span className="alert-pill due-soon">마감 임박 {dueSoonCount}건</span>}
+        </div>
+      )}
+
       <div className="filters">
-        {catOrder.map((cat) => (
+        {CAT_ORDER.map((cat) => (
           <div key={cat} className={`chip ${activeCats.has(cat) ? 'active' : ''}`} data-cat={cat} onClick={() => toggleCat(cat)}>
             {CAT_LABEL[cat]}
           </div>
         ))}
+        {assignees.length > 0 && (
+          <select className="assignee-select" value={activeAssignee} onChange={(e) => setActiveAssignee(e.target.value)}>
+            <option value="all">담당자 전체</option>
+            {assignees.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="board">
         <div className="gantt-scroll">
           <div className="gantt">
-            {visibleTasks.length === 0 ? (
-              <div className="empty">표시할 일정이 없습니다. 카테고리를 선택하거나 새 일정을 추가하세요.</div>
-            ) : (
-              <>
-                <div className="gantt-header">
-                  <div className="row-label-col">업무</div>
-                  <div style={{ display: 'flex' }}>
-                    {Array.from({ length: totalDays }, (_, i) => {
-                      const iso = addDays(range.start, i)
-                      const d = new Date(iso)
-                      const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
-                      const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                      const isToday = iso === todayISO()
-                      return (
-                        <div key={iso} className={`day-cell ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}`}>
-                          {d.getMonth() + 1}/{d.getDate()}<span className="dow">{dow}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {catOrder.filter((c) => activeCats.has(c)).map((cat) => {
-                  const catTasks = tasks.filter((t) => t.category === cat)
-                  if (catTasks.length === 0) return null
+            <div className="gantt-header">
+              <div className="row-label-col">업무</div>
+              <div style={{ display: 'flex' }}>
+                {Array.from({ length: totalDays }, (_, i) => {
+                  const iso = addDays(range.start, i)
+                  const d = new Date(iso)
+                  const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
+                  const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                  const isToday = iso === todayISO()
                   return (
-                    <div className="cat-group" key={cat}>
-                      <div className={`cat-title-row ${cat}`}>
-                        <div className="row-label-col">{CAT_LABEL[cat]} · {catTasks.length}</div>
-                        <div style={{ flex: 1 }}></div>
-                      </div>
-                      {catTasks.map((t) => {
-                        const off = daysBetween(range.start, t.start_date)
-                        const len = daysBetween(t.start_date, t.end_date) + 1
-                        const left = off * DAY_W
-                        const width = Math.max(len * DAY_W - 6, DAY_W - 6)
-                        return (
-                          <div className={`task-row ${cat}`} key={t.id}>
-                            <div className="row-label-col" title={t.title}>{t.title}</div>
-                            <div className="task-track" style={{ width: trackWidth }}>
-                              <div className="today-line" style={{ left: todayLeft }}></div>
-                              <div
-                                className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''}`}
-                                style={{ left, width }}
-                                onClick={() => setDetailTask(t)}
-                              >
-                                {t.title}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
+                    <div key={iso} className={`day-cell ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}`}>
+                      {d.getMonth() + 1}/{d.getDate()}<span className="dow">{dow}</span>
                     </div>
                   )
                 })}
-              </>
-            )}
+              </div>
+            </div>
+
+            {CAT_ORDER.filter((c) => activeCats.has(c)).map((cat) => {
+              const catTasks = filteredTasks.filter((t) => t.category === cat)
+              const isDraggingThis = dragging && dragging.cat === cat
+              let selLeft = 0, selWidth = 0
+              if (isDraggingThis) {
+                const min = Math.min(dragging.startDay, dragging.currentDay)
+                const max = Math.max(dragging.startDay, dragging.currentDay)
+                selLeft = min * DAY_W
+                selWidth = (max - min + 1) * DAY_W
+              }
+              return (
+                <div className="cat-group" key={cat}>
+                  <div className={`cat-title-row ${cat}`}>
+                    <div className="row-label-col">{CAT_LABEL[cat]} · {catTasks.length}</div>
+                    <div
+                      className="cat-drag-grid"
+                      ref={(el) => (gridRefs.current[cat] = el)}
+                      style={{ width: trackWidth }}
+                      title="드래그하여 새 일정 추가"
+                      onMouseDown={(e) => handleGridMouseDown(cat, e)}
+                    >
+                      {isDraggingThis && <div className="drag-select" style={{ left: selLeft, width: selWidth }}></div>}
+                    </div>
+                  </div>
+                  {catTasks.map((t) => {
+                    const off = daysBetween(range.start, t.start_date)
+                    const len = daysBetween(t.start_date, t.end_date) + 1
+                    const left = off * DAY_W
+                    const width = Math.max(len * DAY_W - 6, DAY_W - 6)
+                    const overdue = isOverdue(t)
+                    const dueSoon = isDueSoon(t)
+                    return (
+                      <div className={`task-row ${cat}`} key={t.id}>
+                        <div className="row-label-col" title={t.title}>{t.title}</div>
+                        <div className="task-track" style={{ width: trackWidth }}>
+                          <div className="today-line" style={{ left: todayLeft }}></div>
+                          <div
+                            className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''}`}
+                            style={{ left, width }}
+                            onClick={() => setDetailTask(t)}
+                          >
+                            {t.title}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
 
-      {/* 상세보기 모달 */}
       <div className={`overlay ${detailTask ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setDetailTask(null)}>
         {detailTask && (
           <div className="modal">
@@ -225,6 +308,8 @@ export default function Board({ session }) {
             <div className="detail-meta">
               <span className={`badge ${detailTask.category}`}>{CAT_LABEL[detailTask.category]}</span>
               <span className="badge status">{STATUS_LABEL[detailTask.status]}</span>
+              {isOverdue(detailTask) && <span className="badge danger">기한 초과</span>}
+              {isDueSoon(detailTask) && <span className="badge warning">마감 임박</span>}
             </div>
             <div className="detail-row"><span>담당자</span><span>{detailTask.assignee || '미지정'}</span></div>
             <div className="detail-row"><span>시작일</span><span>{detailTask.start_date}</span></div>
@@ -238,7 +323,6 @@ export default function Board({ session }) {
         )}
       </div>
 
-      {/* 추가/수정 폼 모달 */}
       <div className={`overlay ${formOpen ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setFormOpen(false)}>
         <div className="modal">
           <h2>{editingId ? '일정 수정' : '새 일정 추가'}</h2>
@@ -250,7 +334,7 @@ export default function Board({ session }) {
             <div className="field">
               <label>카테고리</label>
               <div className="cat-select">
-                {catOrder.map((cat) => (
+                {CAT_ORDER.map((cat) => (
                   <div key={cat} className={`cat-opt ${form.category === cat ? 'sel' : ''}`} data-cat={cat} onClick={() => setForm({ ...form, category: cat })}>
                     {CAT_LABEL[cat]}
                   </div>
@@ -260,7 +344,10 @@ export default function Board({ session }) {
             <div className="field-row">
               <div className="field">
                 <label>담당자</label>
-                <input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} placeholder="담당자 이름" />
+                <input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} placeholder="담당자 이름" list="assignee-list" />
+                <datalist id="assignee-list">
+                  {assignees.map((a) => <option key={a} value={a} />)}
+                </datalist>
               </div>
               <div className="field">
                 <label>상태</label>
