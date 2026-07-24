@@ -38,6 +38,7 @@ export default function Board({ session }) {
   const [formOpen, setFormOpen] = useState(false)
   const [detailTask, setDetailTask] = useState(null)
   const [editingId, setEditingId] = useState(null)
+  const [originalAssignee, setOriginalAssignee] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [dragging, setDragging] = useState(null)
   const gridRefs = useRef({})
@@ -117,6 +118,7 @@ export default function Board({ session }) {
 
   function openAddForm() {
     setEditingId(null)
+    setOriginalAssignee(null)
     setForm(emptyForm)
     setAssigneeError('')
     setAssigneeOpen(false)
@@ -124,6 +126,7 @@ export default function Board({ session }) {
   }
   function openEditForm(t) {
     setEditingId(t.id)
+    setOriginalAssignee(t.assignee || '')
     setForm({
       title: t.title, category: t.category, assignee: t.assignee || '',
       status: t.status, start_date: t.start_date, end_date: t.end_date, description: t.description || '',
@@ -188,6 +191,12 @@ export default function Board({ session }) {
       await supabase.from('tasks').update(payload).eq('id', editingId)
     } else {
       await supabase.from('tasks').insert(payload)
+    }
+    const shouldNotify = trimmedAssignee && (editingId === null || originalAssignee !== trimmedAssignee)
+    if (shouldNotify) {
+      supabase.functions
+        .invoke('notify-discord', { body: { type: 'assigned', task: payload, projectName: project?.name } })
+        .catch((err) => console.warn('디스코드 알림 전송 실패', err))
     }
     setFormOpen(false)
     loadTasks()

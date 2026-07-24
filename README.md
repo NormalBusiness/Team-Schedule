@@ -56,11 +56,40 @@ npm run dev
 - **+ 새 일정 추가**로 업무를 등록하고, 막대를 클릭하면 상세 내역을 볼 수 있습니다.
 - 팀원이 같은 프로젝트에서 일정을 추가/수정하면 실시간으로 화면에 반영됩니다.
 
+## 6. 디스코드 알림 설정 (업무 배정 / 마감 임박)
+
+담당자가 배정되면 즉시, 마감 임박·초과 일정은 매일 아침 자동으로 디스코드 채널에 알림이 올라옵니다.
+
+**1) 디스코드 웹훅 URL 만들기**
+1. 알림 받을 디스코드 채널에서 채널 설정(⚙️) → **연동(Integrations)** → **웹훅(Webhooks)** → **새 웹훅**
+2. 이름을 정하고 **웹훅 URL 복사**
+
+**2) Supabase에 Edge Function 배포**
+1. Supabase 대시보드 → 좌측 메뉴 **Edge Functions** → **Deploy a new function**
+2. 함수 이름: `notify-discord`
+3. `supabase/functions/notify-discord/index.ts` 파일 내용을 그대로 붙여넣고 **Deploy**
+
+**3) Discord 웹훅 URL을 시크릿으로 등록**
+1. Supabase 대시보드 → **Project Settings → Edge Functions → Secrets**
+2. 이름 `DISCORD_WEBHOOK_URL`, 값에 1)에서 복사한 웹훅 URL 입력 후 저장
+
+**4) 매일 아침 요약 알림 스케줄 등록 (GitHub Actions)**
+1. GitHub 저장소 → **Settings → Secrets and variables → Actions → New repository secret**
+2. 아래 두 개를 등록:
+   - `SUPABASE_URL`: `.env`에 있는 값과 동일 (예: `https://xxxx.supabase.co`)
+   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase 대시보드 → Project Settings → API → **service_role** 키 (anon 키 아님! 외부에 노출되면 안 되는 키라 반드시 GitHub Secrets에만 저장하세요)
+3. `.github/workflows/deadline-digest.yml`이 저장소에 push되어 있으면 매일 한국시간 오전 9시에 자동 실행됩니다. **Actions** 탭에서 `Run workflow` 버튼으로 즉시 테스트도 가능해요.
+
+설정 후 담당자를 지정해서 일정을 저장하면 바로 디스코드에 알림이 뜨는지 확인해보세요.
+
+
 ## 5. 폴더 구조
 
 ```
 team-schedule/
   supabase-schema.sql   ← Supabase SQL Editor에서 실행
+  supabase/functions/notify-discord/index.ts  ← 디스코드 알림 Edge Function
+  .github/workflows/deadline-digest.yml       ← 매일 아침 마감 임박 알림 스케줄
   src/
     supabaseClient.js   ← Supabase 연결 설정
     App.jsx             ← 로그인 상태 관리 및 라우팅
