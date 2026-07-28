@@ -52,6 +52,7 @@ export default function Board({ session }) {
 
   const [periodOpen, setPeriodOpen] = useState(false)
   const [periodForm, setPeriodForm] = useState({ start_date: '', end_date: '' })
+  const [sendingDigest, setSendingDigest] = useState(false)
 
   useEffect(() => {
     loadProject()
@@ -241,6 +242,24 @@ export default function Board({ session }) {
     loadProject()
   }
 
+  async function sendDeadlineAlert() {
+    setSendingDigest(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('notify-discord', { body: { type: 'digest', projectId } })
+      if (error) throw error
+      if (data?.skipped) {
+        alert('현재 마감 임박이나 기한 초과인 일정이 없어요.')
+      } else {
+        alert('디스코드에 알림을 보냈어요.')
+      }
+    } catch (err) {
+      console.error('마감 임박 알림 전송 실패', err)
+      alert('알림 전송에 실패했어요. 콘솔을 확인해주세요.')
+    } finally {
+      setSendingDigest(false)
+    }
+  }
+
   function clampToRange(iso) {
     if (iso < range.start) return range.start
     if (iso > range.end) return range.end
@@ -367,6 +386,9 @@ export default function Board({ session }) {
         <div className="board-alert">
           {overdueCount > 0 && <span className="alert-pill overdue">기한 초과 {overdueCount}건</span>}
           {dueSoonCount > 0 && <span className="alert-pill due-soon">마감 임박 {dueSoonCount}건</span>}
+          <button className="btn btn-small" onClick={sendDeadlineAlert} disabled={sendingDigest}>
+            {sendingDigest ? '전송 중...' : '디스코드로 알림 보내기'}
+          </button>
         </div>
       )}
 

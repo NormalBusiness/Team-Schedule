@@ -21,8 +21,15 @@ export default function Projects({ session }) {
   const [endDate, setEndDate] = useState(addDays(todayISO(), 30))
   const navigate = useNavigate()
 
+  const [profile, setProfile] = useState(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [nickname, setNickname] = useState('')
+  const [discordId, setDiscordId] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+
   useEffect(() => {
     loadProjects()
+    loadProfile()
   }, [])
 
   async function loadProjects() {
@@ -33,6 +40,34 @@ export default function Projects({ session }) {
       .order('created_at', { ascending: false })
     if (!error) setProjects(data)
     setLoading(false)
+  }
+
+  async function loadProfile() {
+    const { data } = await supabase.from('profiles').select('name, discord_id').eq('id', session.user.id).single()
+    if (data) setProfile(data)
+  }
+
+  function openProfileForm() {
+    setNickname(profile?.name || '')
+    setDiscordId(profile?.discord_id || '')
+    setProfileOpen(true)
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault()
+    if (!nickname.trim()) { alert('닉네임을 입력해주세요.'); return }
+    setProfileSaving(true)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name: nickname.trim(), discord_id: discordId.trim() || null })
+      .eq('id', session.user.id)
+    setProfileSaving(false)
+    if (error) {
+      alert('저장에 실패했어요: ' + error.message)
+      return
+    }
+    setProfileOpen(false)
+    loadProfile()
   }
 
   async function createProject(e) {
@@ -68,7 +103,10 @@ export default function Projects({ session }) {
       <div className="topbar">
         <div>
           <h1>프로젝트</h1>
-          <div className="sub">{session.user.email}</div>
+          <div className="sub">
+            {profile?.name ? `${profile.name} · ` : ''}{session.user.email}
+            <span className="period-edit-link" onClick={openProfileForm}>닉네임 변경</span>
+          </div>
         </div>
         <div className="topbar-actions">
           <button className="btn" onClick={() => supabase.auth.signOut()}>로그아웃</button>
@@ -120,6 +158,31 @@ export default function Projects({ session }) {
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setShowForm(false)}>취소</button>
               <button type="submit" className="btn primary">만들기</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`overlay ${profileOpen ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setProfileOpen(false)}>
+        <div className="modal">
+          <h2>내 프로필</h2>
+          <form onSubmit={saveProfile}>
+            <div className="field">
+              <label>닉네임</label>
+              <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="담당자로 표시될 이름" autoFocus />
+            </div>
+            <div className="field">
+              <label>디스코드 사용자 ID (선택)</label>
+              <input value={discordId} onChange={(e) => setDiscordId(e.target.value)} placeholder="예: 123456789012345678" />
+              <div className="field-hint">
+                등록하면 업무 배정/마감 임박 알림에서 진짜로 멘션(핑)이 울려요. 비워두면 "@닉네임" 텍스트로만 표시돼요.
+                <br />
+                디스코드 앱 → 설정 → 고급 → 개발자 모드 켜기 → 내 프로필 우클릭 → "사용자 ID 복사"로 확인할 수 있어요.
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setProfileOpen(false)}>취소</button>
+              <button type="submit" className="btn primary" disabled={profileSaving}>{profileSaving ? '저장 중...' : '저장'}</button>
             </div>
           </form>
         </div>

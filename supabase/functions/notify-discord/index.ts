@@ -6,16 +6,46 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 const CAT_LABEL: Record<string, string> = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트' }
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
 async function postToDiscord(content: string) {
   if (!DISCORD_WEBHOOK_URL) {
     console.warn('DISCORD_WEBHOOK_URL 시크릿이 설정되어 있지 않습니다.')
     return
   }
-  await fetch(DISCORD_WEBHOOK_URL, {
+  const res = await fetch(DISCORD_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   })
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('디스코드 웹훅 응답 오류', res.status, text)
+  } else {
+    console.log('디스코드 전송 성공', res.status)
+  }
+}
+
+// 담당자 이름 -> 디스코드 멘션 문자열. discord_id가 등록되어 있으면 실제 핑이 울리는 <@id> 형태,
+// 없으면 그냥 @이름 텍스트로 표시됨.
+async function buildMentionMap(names: string[]): Promise<Record<string, string>> {
+  const map: Record<string, string> = {}
+  const uniqueNames = Array.from(new Set(names.filter(Boolean)))
+  if (uniqueNames.length === 0) return map
+  const { data } = await supabase.from('profiles').select('name, discord_id').in('name', uniqueNames)
+  ;(data || []).forEach((p: any) => {
+    map[p.name] = p.discord_id ? `<@${p.discord_id}>` : `@${p.name}`
+  })
+  uniqueNames.forEach((n) => {
+    if (!map[n]) map[n] = `@${n}`
+  })
+  return map
 }
 
 function todayISO() {
@@ -28,29 +58,48 @@ function addDaysISO(n: number) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  let body
   try {
-    const body = await req.json()
+    body = await req.json()
+  } catch {
+    console.warn('요청 본문이 비어있거나 JSON 형식이 아닙니다. (테스트 호출일 수 있음)')
+    return new Response(JSON.stringify({ ok: false, error: 'empty or invalid JSON body' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  try {
+    console.log('notify-discord 호출됨, type =', body?.type)
 
     // ---------- 업무 배정 알림 ----------
     if (body.type === 'assigned') {
       const t = body.task
       const cat = CAT_LABEL[t.category] || t.category
+      const mentionMap = await buildMentionMap([t.assignee])
+      const mention = t.assignee ? (mentionMap[t.assignee] || `@${t.assignee}`) : '담당자 미지정'
       const content =
-        `📌 **${t.title}** 업무가 **${t.assignee}**님에게 배정되었습니다.\n` +
+        `📌 **${t.title}** 업무가 ${mention}님에게 배정되었습니다.\n` +
         `프로젝트: ${body.projectName ?? '알 수 없음'} · 카테고리: ${cat}\n` +
         `기간: ${t.start_date} ~ ${t.end_date}`
       await postToDiscord(content)
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ---------- 마감 임박/초과 일일 요약 알림 ----------
+    // ---------- 마감 임박/초과 알림 (자동 스케줄 또는 수동 버튼) ----------
     if (body.type === 'digest') {
-      const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-      const { data: tasks, error } = await supabase
+      let query = supabase
         .from('tasks')
         .select('title, assignee, status, end_date, category, projects(name)')
         .neq('status', 'done')
-
+      if (body.projectId) {
+        query = query.eq('project_id', body.projectId)
+      }
+      const { data: tasks, error } = await query
       if (error) throw error
 
       const today = todayISO()
@@ -60,35 +109,39 @@ Deno.serve(async (req) => {
       const dueSoon = (tasks || []).filter((t: any) => t.end_date >= today && t.end_date <= soonCutoff)
 
       if (overdue.length === 0 && dueSoon.length === 0) {
-        return new Response(JSON.stringify({ ok: true, skipped: true }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ ok: true, skipped: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
+
+      const allNames = [...overdue, ...dueSoon].map((t: any) => t.assignee).filter(Boolean)
+      const mentionMap = await buildMentionMap(allNames)
+      const mentionOf = (name?: string) => (name ? mentionMap[name] || `@${name}` : '미지정')
 
       let content = `📅 **오늘의 일정 알림** (${today})\n`
       if (overdue.length > 0) {
         content += `\n**⛔ 기한 초과 (${overdue.length}건)**\n`
         overdue.forEach((t: any) => {
-          content += `- ${t.title} · ${t.assignee || '미지정'} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
+          content += `- ${t.title} · ${mentionOf(t.assignee)} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
         })
       }
       if (dueSoon.length > 0) {
         content += `\n**⚠️ 마감 임박 (${dueSoon.length}건)**\n`
         dueSoon.forEach((t: any) => {
-          content += `- ${t.title} · ${t.assignee || '미지정'} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
+          content += `- ${t.title} · ${mentionOf(t.assignee)} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
         })
       }
       await postToDiscord(content)
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     return new Response(JSON.stringify({ ok: false, error: 'unknown type' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
     console.error(err)
     return new Response(JSON.stringify({ ok: false, error: String(err) }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })

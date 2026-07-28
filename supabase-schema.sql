@@ -20,6 +20,7 @@ create table if not exists projects (
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text not null,
+  discord_id text,
   created_at timestamptz default now()
 );
 
