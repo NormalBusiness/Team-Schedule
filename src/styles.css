@@ -216,13 +216,22 @@ button, input, select, textarea{font-family:inherit;}
 .gantt-scroll::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px;}
 .gantt-scroll::-webkit-scrollbar-thumb:hover{background:var(--text-mute);}
 .gantt{position:relative;min-width:max-content;}
-.gantt-header{display:flex;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:3;}
+.gantt-header{display:flex;flex-direction:column;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:3;}
+.week-row{display:flex;border-bottom:1px solid var(--border);}
+.week-row .row-label-col{height:22px;}
+.week-cell{
+  text-align:center;font-family:var(--font-mono);font-size:11px;font-weight:600;
+  color:var(--text-mute);padding:4px 0;letter-spacing:.03em;
+  border-right:1px solid var(--border);
+}
+.day-row{display:flex;}
+.day-row .row-label-col{height:38px;}
 .row-label-col{
   width:150px;min-width:150px;border-right:1px solid var(--border);background:var(--panel-2);
   position:sticky;left:0;z-index:4;display:flex;align-items:center;padding:0 14px;
   font-family:var(--font-mono);font-size:11px;color:var(--text-mute);
 }
-.gantt-header .row-label-col{height:38px;}
+
 .day-cell{
   width:34px;min-width:34px;text-align:center;font-family:var(--font-mono);font-size:10px;
   color:var(--text-mute);padding:6px 0;border-right:1px solid rgba(255,255,255,0.03);

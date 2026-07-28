@@ -93,6 +93,18 @@ export default function Board({ session }) {
   const todayOffset = daysBetween(range.start, todayISO())
   const todayLeft = todayOffset * DAY_W + DAY_W / 2
   const dayLineOffsets = useMemo(() => Array.from({ length: totalDays }, (_, i) => i * DAY_W), [totalDays])
+  const weekGroups = useMemo(() => {
+    const groups = []
+    let i = 0
+    let week = 1
+    while (i < totalDays) {
+      const span = Math.min(7, totalDays - i)
+      groups.push({ label: `${week}주차`, span })
+      i += span
+      week++
+    }
+    return groups
+  }, [totalDays])
 
   useEffect(() => {
     hasCenteredRef.current = false
@@ -413,20 +425,30 @@ export default function Board({ session }) {
         <div className="gantt-scroll" ref={scrollRef}>
           <div className="gantt">
             <div className="gantt-header">
-              <div className="row-label-col">업무</div>
-              <div style={{ display: 'flex' }}>
-                {Array.from({ length: totalDays }, (_, i) => {
-                  const iso = addDays(range.start, i)
-                  const d = new Date(iso)
-                  const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                  const isToday = iso === todayISO()
-                  return (
-                    <div key={iso} className={`day-cell ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}`}>
-                      {d.getMonth() + 1}/{d.getDate()}<span className="dow">{dow}</span>
-                    </div>
-                  )
-                })}
+              <div className="week-row">
+                <div className="row-label-col"></div>
+                <div style={{ display: 'flex' }}>
+                  {weekGroups.map((g, idx) => (
+                    <div key={idx} className="week-cell" style={{ width: g.span * DAY_W }}>{g.label}</div>
+                  ))}
+                </div>
+              </div>
+              <div className="day-row">
+                <div className="row-label-col">업무</div>
+                <div style={{ display: 'flex' }}>
+                  {Array.from({ length: totalDays }, (_, i) => {
+                    const iso = addDays(range.start, i)
+                    const d = new Date(iso)
+                    const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                    const isToday = iso === todayISO()
+                    return (
+                      <div key={iso} className={`day-cell ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}`}>
+                        {d.getMonth() + 1}/{d.getDate()}<span className="dow">{dow}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
 
