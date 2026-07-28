@@ -41,6 +41,7 @@ export default function Board({ session }) {
   const [originalAssignee, setOriginalAssignee] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [dragging, setDragging] = useState(null)
+  const [taskDrag, setTaskDrag] = useState(null)
   const gridRefs = useRef({})
 
   const [assigneeOpen, setAssigneeOpen] = useState(false)
@@ -225,6 +226,68 @@ export default function Board({ session }) {
     loadProject()
   }
 
+  function clampToRange(iso) {
+    if (iso < range.start) return range.start
+    if (iso > range.end) return range.end
+    return iso
+  }
+
+  function handleBarMouseDown(t, e, mode) {
+    e.preventDefault()
+    e.stopPropagation()
+    const downDay = computeDayFromEvent(e, t.category)
+    setTaskDrag({ taskId: t.id, category: t.category, mode, origStart: t.start_date, origEnd: t.end_date, downDay, deltaDays: 0 })
+  }
+
+  function computeTaskDragDates(drag) {
+    const delta = drag.deltaDays || 0
+    let newStart = drag.origStart
+    let newEnd = drag.origEnd
+    if (drag.mode === 'move') {
+      newStart = clampToRange(addDays(drag.origStart, delta))
+      newEnd = clampToRange(addDays(drag.origEnd, delta))
+    } else if (drag.mode === 'resize-start') {
+      newStart = clampToRange(addDays(drag.origStart, delta))
+      if (newStart > drag.origEnd) newStart = drag.origEnd
+    } else if (drag.mode === 'resize-end') {
+      newEnd = clampToRange(addDays(drag.origEnd, delta))
+      if (newEnd < drag.origStart) newEnd = drag.origStart
+    }
+    return { newStart, newEnd }
+  }
+
+  useEffect(() => {
+    if (!taskDrag) return
+    function onMove(e) {
+      const day = computeDayFromEvent(e, taskDrag.category)
+      setTaskDrag((prev) => (prev ? { ...prev, deltaDays: day - prev.downDay } : prev))
+    }
+    function onUp() {
+      setTaskDrag((prev) => {
+        if (prev) {
+          if (prev.deltaDays === 0) {
+            const t = tasks.find((x) => x.id === prev.taskId)
+            if (t) setDetailTask(t)
+          } else {
+            const { newStart, newEnd } = computeTaskDragDates(prev)
+            supabase
+              .from('tasks')
+              .update({ start_date: newStart, end_date: newEnd })
+              .eq('id', prev.taskId)
+              .then(() => loadTasks())
+          }
+        }
+        return null
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [taskDrag])
+
   function computeDayFromEvent(e, cat) {
     const el = gridRefs.current[cat]
     if (!el) return 0
@@ -354,8 +417,16 @@ export default function Board({ session }) {
                     </div>
                   </div>
                   {catTasks.map((t) => {
-                    const off = daysBetween(range.start, t.start_date)
-                    const len = daysBetween(t.start_date, t.end_date) + 1
+                    const isDraggingTask = taskDrag && taskDrag.taskId === t.id
+                    let dispStart = t.start_date
+                    let dispEnd = t.end_date
+                    if (isDraggingTask) {
+                      const computed = computeTaskDragDates(taskDrag)
+                      dispStart = computed.newStart
+                      dispEnd = computed.newEnd
+                    }
+                    const off = daysBetween(range.start, dispStart)
+                    const len = daysBetween(dispStart, dispEnd) + 1
                     const left = off * DAY_W
                     const width = Math.max(len * DAY_W - 6, DAY_W - 6)
                     const overdue = isOverdue(t)
@@ -366,11 +437,13 @@ export default function Board({ session }) {
                         <div className="task-track" style={{ width: trackWidth }}>
                           <div className="today-line" style={{ left: todayLeft }}></div>
                           <div
-                            className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''}`}
+                            className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''} ${isDraggingTask ? 'dragging' : ''}`}
                             style={{ left, width }}
-                            onClick={() => setDetailTask(t)}
+                            onMouseDown={(e) => handleBarMouseDown(t, e, 'move')}
                           >
-                            {t.title}
+                            <div className="bar-handle bar-handle-left" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-start')}></div>
+                            <span className="bar-label">{t.title}</span>
+                            <div className="bar-handle bar-handle-right" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-end')}></div>
                           </div>
                         </div>
                       </div>
