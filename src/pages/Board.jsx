@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
-const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트' }
-const CAT_ORDER = ['art', 'plan', 'dev', 'effect']
+const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트', sound: '사운드' }
+const CAT_ORDER = ['art', 'plan', 'dev', 'effect', 'sound']
 const STATUS_LABEL = { todo: '예정', doing: '진행중', done: '완료' }
 const DAY_W = 34
 

@@ -29,7 +29,7 @@ create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
   title text not null,
-  category text not null check (category in ('art', 'plan', 'dev', 'effect')),
+  category text not null check (category in ('art', 'plan', 'dev', 'effect', 'sound')),
   assignee text,
   start_date date not null,
   end_date date not null,

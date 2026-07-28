@@ -4,7 +4,7 @@ const DISCORD_WEBHOOK_URL = Deno.env.get('DISCORD_WEBHOOK_URL') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-const CAT_LABEL: Record<string, string> = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트' }
+const CAT_LABEL: Record<string, string> = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트', sound: '사운드' }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,13 +34,23 @@ async function postToDiscord(content: string) {
 
 // 담당자 이름 -> 디스코드 멘션 문자열. discord_id가 등록되어 있으면 실제 핑이 울리는 <@id> 형태,
 // 없으면 그냥 @이름 텍스트로 표시됨.
+// 한글은 입력 환경에 따라 눈에는 같아 보여도 유니코드 정규화 형태(NFC/NFD)가 달라
+// 문자열이 다르게 취급될 수 있어, 비교 전에 NFC로 통일한다.
+function norm(s: string | null | undefined): string {
+  return (s ?? '').normalize('NFC').trim()
+}
+
 async function buildMentionMap(names: string[]): Promise<Record<string, string>> {
   const map: Record<string, string> = {}
-  const uniqueNames = Array.from(new Set(names.filter(Boolean)))
+  const uniqueNames = Array.from(new Set(names.filter(Boolean).map(norm)))
   if (uniqueNames.length === 0) return map
-  const { data } = await supabase.from('profiles').select('name, discord_id').in('name', uniqueNames)
+  const { data, error } = await supabase.from('profiles').select('name, discord_id').in('name', uniqueNames)
+  if (error) {
+    console.error('profiles 조회 실패', error)
+  }
+  console.log('멘션 매칭 대상:', uniqueNames, '/ profiles 조회 결과:', data)
   ;(data || []).forEach((p: any) => {
-    map[p.name] = p.discord_id ? `<@${p.discord_id}>` : `@${p.name}`
+    map[norm(p.name)] = p.discord_id ? `<@${p.discord_id}>` : `@${p.name}`
   })
   uniqueNames.forEach((n) => {
     if (!map[n]) map[n] = `@${n}`
@@ -81,7 +91,7 @@ Deno.serve(async (req) => {
       const t = body.task
       const cat = CAT_LABEL[t.category] || t.category
       const mentionMap = await buildMentionMap([t.assignee])
-      const mention = t.assignee ? (mentionMap[t.assignee] || `@${t.assignee}`) : '담당자 미지정'
+      const mention = t.assignee ? (mentionMap[norm(t.assignee)] || `@${t.assignee}`) : '담당자 미지정'
       const content =
         `📌 **${t.title}** 업무가 ${mention}님에게 배정되었습니다.\n` +
         `프로젝트: ${body.projectName ?? '알 수 없음'} · 카테고리: ${cat}\n` +
@@ -114,7 +124,7 @@ Deno.serve(async (req) => {
 
       const allNames = [...overdue, ...dueSoon].map((t: any) => t.assignee).filter(Boolean)
       const mentionMap = await buildMentionMap(allNames)
-      const mentionOf = (name?: string) => (name ? mentionMap[name] || `@${name}` : '미지정')
+      const mentionOf = (name?: string) => (name ? mentionMap[norm(name)] || `@${name}` : '미지정')
 
       let content = `📅 **오늘의 일정 알림** (${today})\n`
       if (overdue.length > 0) {

@@ -55,17 +55,32 @@ export default function Projects({ session }) {
 
   async function saveProfile(e) {
     e.preventDefault()
-    if (!nickname.trim()) { alert('닉네임을 입력해주세요.'); return }
+    const newName = nickname.trim()
+    if (!newName) { alert('닉네임을 입력해주세요.'); return }
+    const oldName = profile?.name || ''
     setProfileSaving(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ name: nickname.trim(), discord_id: discordId.trim() || null })
+      .update({ name: newName, discord_id: discordId.trim() || null })
       .eq('id', session.user.id)
-    setProfileSaving(false)
     if (error) {
+      setProfileSaving(false)
       alert('저장에 실패했어요: ' + error.message)
       return
     }
+    if (oldName && oldName !== newName) {
+      const { data: updatedTasks, error: taskError } = await supabase
+        .from('tasks')
+        .update({ assignee: newName })
+        .eq('assignee', oldName)
+        .select('id')
+      if (taskError) {
+        console.error('담당자명 일괄 변경 실패', taskError)
+      } else if (updatedTasks && updatedTasks.length > 0) {
+        alert(`닉네임을 변경했어요. "${oldName}"으로 배정되어 있던 일정 ${updatedTasks.length}건의 담당자명도 "${newName}"으로 함께 바꿨어요.`)
+      }
+    }
+    setProfileSaving(false)
     setProfileOpen(false)
     loadProfile()
   }
