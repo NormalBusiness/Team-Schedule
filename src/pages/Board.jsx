@@ -92,6 +92,7 @@ export default function Board({ session }) {
   const trackWidth = totalDays * DAY_W
   const todayOffset = daysBetween(range.start, todayISO())
   const todayLeft = todayOffset * DAY_W + DAY_W / 2
+  const dayLineOffsets = useMemo(() => Array.from({ length: totalDays }, (_, i) => i * DAY_W), [totalDays])
 
   useEffect(() => {
     hasCenteredRef.current = false
@@ -450,6 +451,9 @@ export default function Board({ session }) {
                       title="드래그하여 새 일정 추가"
                       onMouseDown={(e) => handleGridMouseDown(cat, e)}
                     >
+                      {dayLineOffsets.map((x, i) => (
+                        <div key={i} className="grid-line" style={{ left: x }}></div>
+                      ))}
                       {isDraggingThis && <div className="drag-select" style={{ left: selLeft, width: selWidth }}></div>}
                     </div>
                   </div>
@@ -472,6 +476,9 @@ export default function Board({ session }) {
                       <div className={`task-row ${cat}`} key={t.id}>
                         <div className="row-label-col" title={t.title}>{t.title}</div>
                         <div className="task-track" style={{ width: trackWidth }}>
+                          {dayLineOffsets.map((x, i) => (
+                            <div key={i} className="grid-line" style={{ left: x }}></div>
+                          ))}
                           <div className="today-line" style={{ left: todayLeft }}></div>
                           <div
                             className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''} ${isDraggingTask ? 'dragging' : ''}`}
