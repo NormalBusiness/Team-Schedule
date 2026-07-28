@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient'
 import Login from './pages/Login.jsx'
 import Projects from './pages/Projects.jsx'
 import Board from './pages/Board.jsx'
+import MemberPanel from './components/MemberPanel.jsx'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -29,10 +30,13 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Projects session={session} />} />
-      <Route path="/board/:projectId" element={<Board session={session} />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<Projects session={session} />} />
+        <Route path="/board/:projectId" element={<Board session={session} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <MemberPanel session={session} />
+    </>
   )
 }

@@ -24,6 +24,15 @@ create table if not exists profiles (
   created_at timestamptz default now()
 );
 
+-- 팀원 1:1 채팅
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  receiver_id uuid not null references auth.users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz default now()
+);
+
 -- 일정(업무) 테이블
 create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
@@ -67,6 +76,16 @@ create policy "users can update own profile"
   on profiles for update
   using (auth.uid() = id);
 
+alter table messages enable row level security;
+
+create policy "users can view own conversations"
+  on messages for select
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+create policy "users can send messages"
+  on messages for insert
+  with check (auth.uid() = sender_id);
+
 -- 회원가입 시 auth.users에 새 행이 생기면 자동으로 profiles에도 이름을 넣어주는 트리거
 create or replace function public.handle_new_user()
 returns trigger
@@ -88,3 +107,4 @@ create trigger on_auth_user_created
 -- 실시간 동기화를 위해 tasks 테이블을 realtime publication에 추가
 alter publication supabase_realtime add table tasks;
 alter publication supabase_realtime add table projects;
+alter publication supabase_realtime add table messages;
