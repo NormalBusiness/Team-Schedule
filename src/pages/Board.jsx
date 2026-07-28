@@ -43,6 +43,8 @@ export default function Board({ session }) {
   const [dragging, setDragging] = useState(null)
   const [taskDrag, setTaskDrag] = useState(null)
   const gridRefs = useRef({})
+  const scrollRef = useRef(null)
+  const hasCenteredRef = useRef(false)
 
   const [assigneeOpen, setAssigneeOpen] = useState(false)
   const [assigneeError, setAssigneeError] = useState('')
@@ -89,6 +91,19 @@ export default function Board({ session }) {
   const trackWidth = totalDays * DAY_W
   const todayOffset = daysBetween(range.start, todayISO())
   const todayLeft = todayOffset * DAY_W + DAY_W / 2
+
+  useEffect(() => {
+    hasCenteredRef.current = false
+  }, [projectId])
+
+  useEffect(() => {
+    if (!project || hasCenteredRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const todayCenterPx = todayOffset * DAY_W + DAY_W / 2
+    el.scrollLeft = Math.max(0, todayCenterPx - el.clientWidth / 2)
+    hasCenteredRef.current = true
+  }, [project, todayOffset])
 
   const assignees = useMemo(
     () => Array.from(new Set(tasks.map((t) => t.assignee).filter(Boolean))).sort(),
@@ -372,7 +387,7 @@ export default function Board({ session }) {
       </div>
 
       <div className="board">
-        <div className="gantt-scroll">
+        <div className="gantt-scroll" ref={scrollRef}>
           <div className="gantt">
             <div className="gantt-header">
               <div className="row-label-col">업무</div>
