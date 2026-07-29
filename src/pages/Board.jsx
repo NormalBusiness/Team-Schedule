@@ -8,7 +8,11 @@ const STATUS_LABEL = { todo: '예정', doing: '진행중', done: '완료' }
 const DAY_W = 34
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000)
@@ -25,7 +29,7 @@ function isDueSoon(t) {
   return t.status !== 'done' && !isOverdue(t) && daysBetween(todayISO(), t.end_date) <= 2
 }
 
-const emptyForm = { title: '', category: 'art', assignee: '', status: 'todo', start_date: todayISO(), end_date: addDays(todayISO(), 3), description: '' }
+const emptyForm = { title: '', category: 'art', assignee: '', status: 'todo', start_date: todayISO(), end_date: addDays(todayISO(), 3), description: '', feedback_start: '' }
 
 export default function Board({ session }) {
   const { projectId } = useParams()
@@ -160,6 +164,7 @@ export default function Board({ session }) {
     setForm({
       title: t.title, category: t.category, assignee: t.assignee || '',
       status: t.status, start_date: t.start_date, end_date: t.end_date, description: t.description || '',
+      feedback_start: t.feedback_start || '',
     })
     setAssigneeError('')
     setAssigneeOpen(false)
@@ -206,6 +211,10 @@ export default function Board({ session }) {
     e.preventDefault()
     if (!form.title.trim()) { alert('업무 제목을 입력하세요.'); return }
     if (!form.start_date || !form.end_date || form.start_date > form.end_date) { alert('시작일과 종료일을 확인하세요.'); return }
+    if (form.feedback_start && (form.feedback_start < form.start_date || form.feedback_start > form.end_date)) {
+      alert('피드백 시작일은 일정 기간 내에 있어야 해요.')
+      return
+    }
     const trimmedAssignee = form.assignee.trim()
     if (trimmedAssignee && !teamMembers.includes(trimmedAssignee)) {
       setAssigneeError('등록되지 않은 담당자입니다')
@@ -216,6 +225,7 @@ export default function Board({ session }) {
       title: form.title.trim(), category: form.category, assignee: trimmedAssignee,
       status: form.status, start_date: form.start_date, end_date: form.end_date,
       description: form.description.trim(), project_id: projectId, created_by: session.user.id,
+      feedback_start: form.feedback_start || null,
     }
     if (editingId) {
       await supabase.from('tasks').update(payload).eq('id', editingId)
@@ -421,6 +431,10 @@ export default function Board({ session }) {
         )}
       </div>
 
+      <div className="legend-hint">
+        <span className="legend-swatch"></span> 빗금 = 피드백(컨펌) 기간
+      </div>
+
       <div className="board">
         <div className="gantt-scroll" ref={scrollRef}>
           <div className="gantt">
@@ -494,6 +508,12 @@ export default function Board({ session }) {
                     const width = Math.max(len * DAY_W - 6, DAY_W - 6)
                     const overdue = isOverdue(t)
                     const dueSoon = isDueSoon(t)
+                    let feedbackLeft = null
+                    let feedbackWidth = null
+                    if (t.feedback_start && t.feedback_start >= dispStart && t.feedback_start <= dispEnd) {
+                      feedbackLeft = daysBetween(dispStart, t.feedback_start) * DAY_W
+                      feedbackWidth = width - feedbackLeft
+                    }
                     return (
                       <div className={`task-row ${cat}`} key={t.id}>
                         <div className="row-label-col" title={t.title}>{t.title}</div>
@@ -506,8 +526,12 @@ export default function Board({ session }) {
                             className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''} ${isDraggingTask ? 'dragging' : ''}`}
                             style={{ left, width }}
                             onMouseDown={(e) => handleBarMouseDown(t, e, 'move')}
+                            title={t.feedback_start ? `작업: ${t.start_date}~${addDays(t.feedback_start, -1)} / 피드백: ${t.feedback_start}~${t.end_date}` : t.title}
                           >
                             <div className="bar-handle bar-handle-left" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-start')}></div>
+                            {feedbackLeft !== null && (
+                              <div className="bar-feedback" style={{ left: feedbackLeft, width: feedbackWidth }}></div>
+                            )}
                             <span className="bar-label">{t.title}</span>
                             <div className="bar-handle bar-handle-right" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-end')}></div>
                           </div>
@@ -535,6 +559,9 @@ export default function Board({ session }) {
             <div className="detail-row"><span>담당자</span><span>{detailTask.assignee || '미지정'}</span></div>
             <div className="detail-row"><span>시작일</span><span>{detailTask.start_date}</span></div>
             <div className="detail-row"><span>종료일</span><span>{detailTask.end_date}</span></div>
+            {detailTask.feedback_start && (
+              <div className="detail-row"><span>피드백 기간</span><span>{detailTask.feedback_start} ~ {detailTask.end_date}</span></div>
+            )}
             <div className="detail-desc">{detailTask.description || '세부 내역이 없습니다.'}</div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setDetailTask(null)}>닫기</button>
@@ -601,6 +628,22 @@ export default function Board({ session }) {
                 <label>종료일</label>
                 <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
               </div>
+            </div>
+            <div className="field">
+              <label>피드백(컨펌) 시작일 — 선택</label>
+              <div className="field-row" style={{ alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={form.feedback_start}
+                  min={form.start_date}
+                  max={form.end_date}
+                  onChange={(e) => setForm({ ...form, feedback_start: e.target.value })}
+                />
+                {form.feedback_start && (
+                  <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, feedback_start: '' })}>없음</button>
+                )}
+              </div>
+              <div className="field-hint">지정한 날짜부터 종료일까지가 피드백 기간이 돼요. 막대에 빗금으로 표시돼요.</div>
             </div>
             <div className="field">
               <label>세부 내역</label>

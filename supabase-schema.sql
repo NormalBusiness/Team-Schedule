@@ -44,8 +44,10 @@ create table if not exists tasks (
   end_date date not null,
   status text not null default 'todo' check (status in ('todo', 'doing', 'done')),
   description text,
+  feedback_start date,
   created_at timestamptz default now(),
-  created_by uuid references auth.users(id)
+  created_by uuid references auth.users(id),
+  constraint tasks_feedback_start_check check (feedback_start is null or (feedback_start >= start_date and feedback_start <= end_date))
 );
 
 -- 행 수준 보안 활성화
