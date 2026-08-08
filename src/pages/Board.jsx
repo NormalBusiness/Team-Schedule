@@ -5,7 +5,8 @@ import { supabase } from '../supabaseClient'
 const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트', sound: '사운드' }
 const CAT_ORDER = ['art', 'plan', 'dev', 'effect', 'sound']
 const STATUS_LABEL = { todo: '예정', doing: '진행중', done: '완료' }
-const DAY_W = 34
+const DAY_W_DESKTOP = 34
+const DAY_W_MOBILE = 52
 
 function todayISO() {
   const d = new Date()
@@ -59,6 +60,16 @@ export default function Board({ session }) {
   const [periodOpen, setPeriodOpen] = useState(false)
   const [periodForm, setPeriodForm] = useState({ start_date: '', end_date: '' })
   const [sendingDigest, setSendingDigest] = useState(false)
+
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [mobileListView, setMobileListView] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const handler = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  const DAY_W = isMobile ? DAY_W_MOBILE : DAY_W_DESKTOP
 
   useEffect(() => {
     loadProject()
@@ -524,6 +535,45 @@ export default function Board({ session }) {
         <span className="legend-swatch"></span> 빗금 = 피드백(컨펌) 기간
       </div>
 
+      {isMobile && (
+        <div className="mobile-view-toggle">
+          <button className={`btn btn-small ${!mobileListView ? 'active' : ''}`} onClick={() => setMobileListView(false)}>간트로 보기</button>
+          <button className={`btn btn-small ${mobileListView ? 'active' : ''}`} onClick={() => setMobileListView(true)}>목록으로 보기</button>
+        </div>
+      )}
+
+      {isMobile && mobileListView ? (
+        <div className="mobile-task-list">
+          {CAT_ORDER.filter((c) => activeCats.has(c)).map((cat) => {
+            const catTasks = filteredTasks.filter((t) => t.category === cat).slice().sort((a, b) => a.start_date.localeCompare(b.start_date))
+            if (catTasks.length === 0) return null
+            return (
+              <div key={cat} className="mobile-list-group">
+                <div className={`mobile-list-cat-title ${cat}`}>{CAT_LABEL[cat]} · {catTasks.length}</div>
+                {catTasks.map((t) => {
+                  const overdue = isOverdue(t)
+                  const dueSoon = isDueSoon(t)
+                  return (
+                    <div key={t.id} className={`mobile-task-card ${cat} ${t.status === 'done' ? 'status-done' : ''}`} onClick={() => setDetailTask(t)}>
+                      <div className="mobile-task-title">{t.title}</div>
+                      <div className="mobile-task-meta">
+                        <span>{t.assignee || '미지정'}</span>
+                        <span>{t.start_date} ~ {t.end_date}</span>
+                      </div>
+                      <div className="mobile-task-badges">
+                        <span className="badge status">{STATUS_LABEL[t.status]}</span>
+                        {overdue && <span className="badge danger">기한 초과</span>}
+                        {dueSoon && <span className="badge warning">마감 임박</span>}
+                        {t.feedback_start && <span className="badge warning">피드백중</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
       <div className="board">
         <div className="gantt-scroll" ref={scrollRef}>
           <div className="gantt">
@@ -634,6 +684,7 @@ export default function Board({ session }) {
           </div>
         </div>
       </div>
+      )}
 
       <div className={`overlay ${detailTask ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setDetailTask(null)}>
         {detailTask && (
