@@ -102,6 +102,14 @@ Deno.serve(async (req) => {
 
     // ---------- 마감 임박/초과 알림 (자동 스케줄 또는 수동 버튼) ----------
     if (body.type === 'digest') {
+      const today = todayISO()
+
+      // 시작일이 도래한 '예정' 일정을 자동으로 '진행중'으로 전환
+      let promoteQuery = supabase.from('tasks').update({ status: 'doing' }).eq('status', 'todo').lte('start_date', today)
+      if (body.projectId) promoteQuery = promoteQuery.eq('project_id', body.projectId)
+      const { error: promoteError } = await promoteQuery
+      if (promoteError) console.error('자동 상태 전환 실패', promoteError)
+
       let query = supabase
         .from('tasks')
         .select('title, assignee, status, end_date, category, projects(name)')
@@ -112,7 +120,6 @@ Deno.serve(async (req) => {
       const { data: tasks, error } = await query
       if (error) throw error
 
-      const today = todayISO()
       const soonCutoff = addDaysISO(2)
 
       const overdue = (tasks || []).filter((t: any) => t.end_date < today)

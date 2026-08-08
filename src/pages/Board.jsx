@@ -94,7 +94,20 @@ export default function Board({ session }) {
   }
   async function loadTasks() {
     const { data, error } = await supabase.from('tasks').select('*').eq('project_id', projectId).order('start_date')
-    if (!error) setTasks(data)
+    if (!error) {
+      setTasks(data)
+      autoPromoteTasks(data)
+    }
+  }
+  async function autoPromoteTasks(list) {
+    const today = todayISO()
+    const toPromote = (list || []).filter((t) => t.status === 'todo' && t.start_date <= today)
+    if (toPromote.length === 0) return
+    const ids = toPromote.map((t) => t.id)
+    const { error } = await supabase.from('tasks').update({ status: 'doing' }).in('id', ids)
+    if (!error) {
+      setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, status: 'doing' } : t)))
+    }
   }
   async function loadTeamMembers() {
     const { data, error } = await supabase.from('profiles').select('name').order('name')
