@@ -38,6 +38,7 @@ export default function Board({ session }) {
   const [tasks, setTasks] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [directors, setDirectors] = useState({})
+  const [myName, setMyName] = useState('')
   const [activeCats, setActiveCats] = useState(new Set(CAT_ORDER))
   const [activeAssignee, setActiveAssignee] = useState('all')
   const [formOpen, setFormOpen] = useState(false)
@@ -64,6 +65,7 @@ export default function Board({ session }) {
     loadTasks()
     loadTeamMembers()
     loadDirectors()
+    loadMyName()
     const channel = supabase
       .channel(`tasks-${projectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
@@ -85,6 +87,10 @@ export default function Board({ session }) {
   async function loadProject() {
     const { data } = await supabase.from('projects').select('*').eq('id', projectId).single()
     setProject(data)
+  }
+  async function loadMyName() {
+    const { data, error } = await supabase.from('profiles').select('name').eq('id', session.user.id).single()
+    if (!error) setMyName(data?.name || '')
   }
   async function loadTasks() {
     const { data, error } = await supabase.from('tasks').select('*').eq('project_id', projectId).order('start_date')
@@ -289,6 +295,10 @@ export default function Board({ session }) {
   }
 
   async function requestConfirm(task) {
+    if (!isAssignedToMe(task)) {
+      alert('컨펌 요청은 담당자만 보낼 수 있어요.')
+      return
+    }
     const director = directors[task.category]
     if (!director) {
       alert(`${CAT_LABEL[task.category]} 파트에 지정된 디렉터가 없어요. "디렉터 설정"에서 먼저 지정해주세요.`)
@@ -309,6 +319,11 @@ export default function Board({ session }) {
       console.error('컨펌 요청 전송 실패', err)
       alert('컨펌 요청 전송에 실패했어요. 콘솔을 확인해주세요.')
     }
+  }
+
+  function isAssignedToMe(task) {
+    if (!task || !task.assignee || !myName) return false
+    return task.assignee.normalize('NFC').trim() === myName.normalize('NFC').trim()
   }
 
   function openPeriodForm() {
@@ -625,7 +640,11 @@ export default function Board({ session }) {
             )}
             <div className="detail-desc">{detailTask.description || '세부 내역이 없습니다.'}</div>
             <div className="modal-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-              <button className="btn btn-small" onClick={() => requestConfirm(detailTask)}>컨펌 요청</button>
+              {isAssignedToMe(detailTask) ? (
+                <button className="btn btn-small" onClick={() => requestConfirm(detailTask)}>컨펌 요청</button>
+              ) : (
+                detailTask.assignee && <span className="field-hint">컨펌 요청은 담당자({detailTask.assignee})만 보낼 수 있어요.</span>
+              )}
               {detailTask.status !== 'doing' && (
                 <button className="btn btn-small" onClick={() => updateTaskStatus(detailTask, 'doing')}>진행 중으로 변경</button>
               )}
