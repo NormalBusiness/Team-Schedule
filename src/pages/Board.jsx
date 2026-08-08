@@ -95,14 +95,25 @@ export default function Board({ session }) {
     if (!error) setTeamMembers((data || []).map((r) => r.name).filter(Boolean))
   }
   async function loadDirectors() {
-    const { data, error } = await supabase.from('directors').select('category, user_id, profiles(name)')
-    if (!error) {
-      const map = {}
-      ;(data || []).forEach((d) => {
-        if (d.user_id) map[d.category] = { id: d.user_id, name: d.profiles?.name || '알 수 없음' }
-      })
-      setDirectors(map)
+    const { data: dirs, error } = await supabase.from('directors').select('category, user_id')
+    if (error) {
+      console.error('디렉터 목록 조회 실패', error)
+      return
     }
+    const userIds = (dirs || []).map((d) => d.user_id).filter(Boolean)
+    let nameById = {}
+    if (userIds.length > 0) {
+      const { data: profs, error: profError } = await supabase.from('profiles').select('id, name').in('id', userIds)
+      if (profError) {
+        console.error('디렉터 프로필 조회 실패', profError)
+      }
+      ;(profs || []).forEach((p) => { nameById[p.id] = p.name })
+    }
+    const map = {}
+    ;(dirs || []).forEach((d) => {
+      if (d.user_id) map[d.category] = { id: d.user_id, name: nameById[d.user_id] || '알 수 없음' }
+    })
+    setDirectors(map)
   }
 
   const range = useMemo(() => {
