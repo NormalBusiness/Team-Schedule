@@ -114,7 +114,9 @@ export default function MemberPanel({ session }) {
   return (
     <div className="member-panel">
       <button className="member-panel-tab" onClick={() => setCollapsed((c) => !c)}>
-        {collapsed ? (hasUnread ? '팀원 ●' : '팀원') : '접기 ›'}
+        <span className="tab-label-desktop">{collapsed ? (hasUnread ? '팀원 ●' : '팀원') : '접기 ›'}</span>
+        <span className="tab-label-mobile">{collapsed ? '👥' : '✕'}</span>
+        {collapsed && hasUnread && <span className="tab-unread-dot"></span>}
       </button>
       {!collapsed && (
         <div className="member-panel-body">
