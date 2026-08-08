@@ -37,6 +37,7 @@ export default function Board({ session }) {
   const [project, setProject] = useState(null)
   const [tasks, setTasks] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
+  const [directors, setDirectors] = useState({})
   const [activeCats, setActiveCats] = useState(new Set(CAT_ORDER))
   const [activeAssignee, setActiveAssignee] = useState('all')
   const [formOpen, setFormOpen] = useState(false)
@@ -62,13 +63,23 @@ export default function Board({ session }) {
     loadProject()
     loadTasks()
     loadTeamMembers()
+    loadDirectors()
     const channel = supabase
       .channel(`tasks-${projectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
         loadTasks()
       })
       .subscribe()
-    return () => supabase.removeChannel(channel)
+    const directorsChannel = supabase
+      .channel('directors-board')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'directors' }, () => {
+        loadDirectors()
+      })
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+      supabase.removeChannel(directorsChannel)
+    }
   }, [projectId])
 
   async function loadProject() {
@@ -82,6 +93,16 @@ export default function Board({ session }) {
   async function loadTeamMembers() {
     const { data, error } = await supabase.from('profiles').select('name').order('name')
     if (!error) setTeamMembers((data || []).map((r) => r.name).filter(Boolean))
+  }
+  async function loadDirectors() {
+    const { data, error } = await supabase.from('directors').select('category, user_id, profiles(name)')
+    if (!error) {
+      const map = {}
+      ;(data || []).forEach((d) => {
+        if (d.user_id) map[d.category] = { id: d.user_id, name: d.profiles?.name || '알 수 없음' }
+      })
+      setDirectors(map)
+    }
   }
 
   const range = useMemo(() => {
@@ -248,6 +269,35 @@ export default function Board({ session }) {
     await supabase.from('tasks').delete().eq('id', editingId)
     setFormOpen(false)
     loadTasks()
+  }
+
+  async function updateTaskStatus(task, newStatus) {
+    await supabase.from('tasks').update({ status: newStatus }).eq('id', task.id)
+    setDetailTask({ ...task, status: newStatus })
+    loadTasks()
+  }
+
+  async function requestConfirm(task) {
+    const director = directors[task.category]
+    if (!director) {
+      alert(`${CAT_LABEL[task.category]} 파트에 지정된 디렉터가 없어요. "디렉터 설정"에서 먼저 지정해주세요.`)
+      return
+    }
+    try {
+      const { error } = await supabase.functions.invoke('notify-discord', {
+        body: {
+          type: 'confirm_request',
+          task,
+          projectName: project?.name,
+          directorName: director.name,
+        },
+      })
+      if (error) throw error
+      alert(`${director.name} 디렉터에게 컨펌 요청을 보냈어요.`)
+    } catch (err) {
+      console.error('컨펌 요청 전송 실패', err)
+      alert('컨펌 요청 전송에 실패했어요. 콘솔을 확인해주세요.')
+    }
   }
 
   function openPeriodForm() {
@@ -563,6 +613,15 @@ export default function Board({ session }) {
               <div className="detail-row"><span>피드백 기간</span><span>{detailTask.feedback_start} ~ {detailTask.end_date}</span></div>
             )}
             <div className="detail-desc">{detailTask.description || '세부 내역이 없습니다.'}</div>
+            <div className="modal-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+              <button className="btn btn-small" onClick={() => requestConfirm(detailTask)}>컨펌 요청</button>
+              {detailTask.status !== 'doing' && (
+                <button className="btn btn-small" onClick={() => updateTaskStatus(detailTask, 'doing')}>진행 중으로 변경</button>
+              )}
+              {detailTask.status !== 'done' && (
+                <button className="btn btn-small" onClick={() => updateTaskStatus(detailTask, 'done')}>완료로 변경</button>
+              )}
+            </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setDetailTask(null)}>닫기</button>
               <button className="btn primary" onClick={() => openEditForm(detailTask)}>수정</button>

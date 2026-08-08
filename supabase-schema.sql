@@ -50,6 +50,13 @@ create table if not exists tasks (
   constraint tasks_feedback_start_check check (feedback_start is null or (feedback_start >= start_date and feedback_start <= end_date))
 );
 
+-- 파트별 디렉터 지정
+create table if not exists directors (
+  category text primary key check (category in ('art', 'plan', 'dev', 'effect', 'sound')),
+  user_id uuid references auth.users(id) on delete set null,
+  updated_at timestamptz default now()
+);
+
 -- 행 수준 보안 활성화
 alter table projects enable row level security;
 alter table tasks enable row level security;
@@ -88,6 +95,17 @@ create policy "users can send messages"
   on messages for insert
   with check (auth.uid() = sender_id);
 
+alter table directors enable row level security;
+
+create policy "team members can view directors"
+  on directors for select
+  using (auth.role() = 'authenticated');
+
+create policy "team members can set directors"
+  on directors for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
 -- 회원가입 시 auth.users에 새 행이 생기면 자동으로 profiles에도 이름을 넣어주는 트리거
 create or replace function public.handle_new_user()
 returns trigger
@@ -110,3 +128,4 @@ create trigger on_auth_user_created
 alter publication supabase_realtime add table tasks;
 alter publication supabase_realtime add table projects;
 alter publication supabase_realtime add table messages;
+alter publication supabase_realtime add table directors;

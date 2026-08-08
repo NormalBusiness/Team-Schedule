@@ -143,6 +143,21 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ---------- 컨펌(피드백) 요청 알림 ----------
+    if (body.type === 'confirm_request') {
+      const t = body.task
+      const cat = CAT_LABEL[t.category] || t.category
+      const mentionMap = await buildMentionMap([body.directorName])
+      const mention = body.directorName ? (mentionMap[norm(body.directorName)] || `@${body.directorName}`) : '디렉터 미지정'
+      const content =
+        `🔔 컨펌 요청이 도착했어요, ${mention}님!\n` +
+        `**${t.title}** (${cat}) · 담당자: ${t.assignee || '미지정'}\n` +
+        `프로젝트: ${body.projectName ?? '알 수 없음'} · 기간: ${t.start_date} ~ ${t.end_date}` +
+        (t.feedback_start ? `\n피드백 기간: ${t.feedback_start} ~ ${t.end_date}` : '')
+      await postToDiscord(content)
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ ok: false, error: 'unknown type' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

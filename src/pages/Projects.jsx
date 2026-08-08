@@ -15,6 +15,9 @@ function addDays(iso, n) {
   return d.toISOString().slice(0, 10)
 }
 
+const CAT_LABEL = { art: '아트', plan: '기획', dev: '플밍', effect: '이펙트', sound: '사운드' }
+const CAT_ORDER = ['art', 'plan', 'dev', 'effect', 'sound']
+
 export default function Projects({ session }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -31,9 +34,15 @@ export default function Projects({ session }) {
   const [discordId, setDiscordId] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
 
+  const [teamMembers, setTeamMembers] = useState([])
+  const [directorsOpen, setDirectorsOpen] = useState(false)
+  const [directorForm, setDirectorForm] = useState({})
+  const [directorsSaving, setDirectorsSaving] = useState(false)
+
   useEffect(() => {
     loadProjects()
     loadProfile()
+    loadTeamMembers()
   }, [])
 
   async function loadProjects() {
@@ -49,6 +58,33 @@ export default function Projects({ session }) {
   async function loadProfile() {
     const { data } = await supabase.from('profiles').select('name, discord_id').eq('id', session.user.id).single()
     if (data) setProfile(data)
+  }
+
+  async function loadTeamMembers() {
+    const { data } = await supabase.from('profiles').select('id, name').order('name')
+    setTeamMembers(data || [])
+  }
+
+  async function openDirectorsForm() {
+    const { data } = await supabase.from('directors').select('category, user_id')
+    const initial = {}
+    CAT_ORDER.forEach((cat) => { initial[cat] = '' })
+    ;(data || []).forEach((d) => { initial[d.category] = d.user_id || '' })
+    setDirectorForm(initial)
+    setDirectorsOpen(true)
+  }
+
+  async function saveDirectors(e) {
+    e.preventDefault()
+    setDirectorsSaving(true)
+    const rows = CAT_ORDER.map((cat) => ({ category: cat, user_id: directorForm[cat] || null }))
+    const { error } = await supabase.from('directors').upsert(rows, { onConflict: 'category' })
+    setDirectorsSaving(false)
+    if (error) {
+      alert('저장에 실패했어요: ' + error.message)
+      return
+    }
+    setDirectorsOpen(false)
   }
 
   function openProfileForm() {
@@ -125,6 +161,7 @@ export default function Projects({ session }) {
           <div className="sub">
             {profile?.name ? `${profile.name} · ` : ''}{session.user.email}
             <span className="period-edit-link" onClick={openProfileForm}>닉네임 변경</span>
+            <span className="period-edit-link" onClick={openDirectorsForm}>디렉터 설정</span>
           </div>
         </div>
         <div className="topbar-actions">
@@ -202,6 +239,35 @@ export default function Projects({ session }) {
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setProfileOpen(false)}>취소</button>
               <button type="submit" className="btn primary" disabled={profileSaving}>{profileSaving ? '저장 중...' : '저장'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className={`overlay ${directorsOpen ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setDirectorsOpen(false)}>
+        <div className="modal">
+          <h2>디렉터 설정</h2>
+          <div className="field-hint" style={{ marginBottom: 14 }}>
+            각 파트의 컨펌 요청이 갈 담당자를 지정하세요. 일정 상세보기에서 "컨펌 요청"을 누르면 여기 지정된 사람에게 알림이 가요.
+          </div>
+          <form onSubmit={saveDirectors}>
+            {CAT_ORDER.map((cat) => (
+              <div className="field" key={cat}>
+                <label>{CAT_LABEL[cat]}</label>
+                <select
+                  value={directorForm[cat] || ''}
+                  onChange={(e) => setDirectorForm({ ...directorForm, [cat]: e.target.value })}
+                >
+                  <option value="">지정 안 함</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setDirectorsOpen(false)}>취소</button>
+              <button type="submit" className="btn primary" disabled={directorsSaving}>{directorsSaving ? '저장 중...' : '저장'}</button>
             </div>
           </form>
         </div>
