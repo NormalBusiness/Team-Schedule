@@ -198,6 +198,7 @@ export default function Board({ session }) {
   const filteredTasks = tasks.filter((t) => activeAssignee === 'all' || t.assignee === activeAssignee)
   const dueSoonCount = filteredTasks.filter(isDueSoon).length
   const overdueCount = filteredTasks.filter(isOverdue).length
+  const doingCount = filteredTasks.filter((t) => t.status === 'doing').length
 
   function toggleCat(cat) {
     setActiveCats((prev) => {
@@ -505,10 +506,11 @@ export default function Board({ session }) {
         <button className="btn primary" onClick={openAddForm}>+ 새 일정 추가</button>
       </div>
 
-      {(overdueCount > 0 || dueSoonCount > 0) && (
+      {(overdueCount > 0 || dueSoonCount > 0 || doingCount > 0) && (
         <div className="board-alert">
           {overdueCount > 0 && <span className="alert-pill overdue">기한 초과 {overdueCount}건</span>}
           {dueSoonCount > 0 && <span className="alert-pill due-soon">마감 임박 {dueSoonCount}건</span>}
+          {doingCount > 0 && <span className="alert-pill">진행 중 {doingCount}건</span>}
           <button className="btn btn-small" onClick={sendDeadlineAlert} disabled={sendingDigest}>
             {sendingDigest ? '전송 중...' : '디스코드로 알림 보내기'}
           </button>

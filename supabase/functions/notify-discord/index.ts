@@ -124,12 +124,14 @@ Deno.serve(async (req) => {
 
       const overdue = (tasks || []).filter((t: any) => t.end_date < today)
       const dueSoon = (tasks || []).filter((t: any) => t.end_date >= today && t.end_date <= soonCutoff)
+      // 마감 임박/초과에 이미 포함되지 않은, 그 외 진행 중인 업무 전체
+      const inProgress = (tasks || []).filter((t: any) => t.status === 'doing' && t.end_date > soonCutoff)
 
-      if (overdue.length === 0 && dueSoon.length === 0) {
+      if (overdue.length === 0 && dueSoon.length === 0 && inProgress.length === 0) {
         return new Response(JSON.stringify({ ok: true, skipped: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
-      const allNames = [...overdue, ...dueSoon].map((t: any) => t.assignee).filter(Boolean)
+      const allNames = [...overdue, ...dueSoon, ...inProgress].map((t: any) => t.assignee).filter(Boolean)
       const mentionMap = await buildMentionMap(allNames)
       const mentionOf = (name?: string) => (name ? mentionMap[norm(name)] || `@${name}` : '미지정')
 
@@ -144,6 +146,13 @@ Deno.serve(async (req) => {
         content += `\n**⚠️ 마감 임박 (${dueSoon.length}건)**\n`
         dueSoon.forEach((t: any) => {
           content += `- ${t.title} · ${mentionOf(t.assignee)} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
+        })
+      }
+      if (inProgress.length > 0) {
+        content += `\n**🔧 진행 중인 업무 (${inProgress.length}건)**\n`
+        inProgress.forEach((t: any) => {
+          const cat = CAT_LABEL[t.category] || t.category
+          content += `- ${t.title} (${cat}) · ${mentionOf(t.assignee)} · ${t.projects?.name ?? ''} · ~${t.end_date}\n`
         })
       }
       await postToDiscord(content)
