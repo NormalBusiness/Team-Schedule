@@ -44,11 +44,18 @@ create table if not exists tasks (
   end_date date not null,
   status text not null default 'todo' check (status in ('todo', 'doing', 'done')),
   description text,
-  feedback_start date,
-  is_milestone boolean not null default false,
   created_at timestamptz default now(),
-  created_by uuid references auth.users(id),
-  constraint tasks_feedback_start_check check (feedback_start is null or (feedback_start >= start_date and feedback_start <= end_date))
+  created_by uuid references auth.users(id)
+);
+
+-- 업무 하나에 여러 개 지정 가능한 컨펌(피드백) 기간
+create table if not exists task_confirm_periods (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  start_date date not null,
+  end_date date not null,
+  created_at timestamptz default now(),
+  constraint task_confirm_periods_range_check check (start_date <= end_date)
 );
 
 -- 파트별 디렉터 지정
@@ -71,6 +78,13 @@ create policy "team members full access on projects"
 
 create policy "team members full access on tasks"
   on tasks for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+alter table task_confirm_periods enable row level security;
+
+create policy "team members full access on confirm periods"
+  on task_confirm_periods for all
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 
@@ -130,3 +144,4 @@ alter publication supabase_realtime add table tasks;
 alter publication supabase_realtime add table projects;
 alter publication supabase_realtime add table messages;
 alter publication supabase_realtime add table directors;
+alter publication supabase_realtime add table task_confirm_periods;

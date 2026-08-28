@@ -74,6 +74,19 @@ button, input, select, textarea{font-family:inherit;}
 .field textarea{resize:vertical;min-height:70px;}
 .field-error{color:var(--danger);font-size:11px;font-family:var(--font-mono);margin-top:5px;}
 .field-hint{color:var(--text-mute);font-size:11px;line-height:1.5;margin-top:6px;}
+.confirm-period-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
+.confirm-period-item{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--panel-2);border:1px solid var(--border-strong);border-radius:7px;
+  padding:7px 10px;font-size:12px;font-family:var(--font-mono);color:var(--text-dim);
+}
+.confirm-period-remove{
+  background:none;border:none;color:var(--danger);cursor:pointer;font-size:11px;
+  font-family:var(--font-mono);padding:0;
+}
+.detail-confirm-list{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.detail-confirm-title{font-family:var(--font-mono);font-size:11px;color:var(--text-mute);margin-bottom:6px;}
+.detail-confirm-item{font-size:13px;color:var(--text-dim);padding:3px 0;}
 .checkbox-label{
   display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);
   cursor:pointer;font-family:var(--font-body);
@@ -308,28 +321,6 @@ button, input, select, textarea{font-family:inherit;}
   z-index:1;
 }
 
-.milestone{
-  position:absolute;top:0;height:44px;display:flex;align-items:center;gap:6px;
-  cursor:grab;z-index:2;
-}
-.milestone.dragging{cursor:grabbing;z-index:5;}
-.milestone-diamond{
-  width:14px;height:14px;flex-shrink:0;transform:rotate(45deg);
-  border:2px solid var(--panel);box-shadow:0 0 0 1px rgba(0,0,0,0.3);
-}
-.milestone.art .milestone-diamond{background:var(--art);}
-.milestone.plan .milestone-diamond{background:var(--plan);}
-.milestone.dev .milestone-diamond{background:var(--dev);}
-.milestone.effect .milestone-diamond{background:var(--effect);}
-.milestone.sound .milestone-diamond{background:var(--sound);}
-.milestone-label{
-  font-size:11px;color:var(--text-dim);white-space:nowrap;font-family:var(--font-mono);
-  pointer-events:none;
-}
-.milestone.status-done .milestone-diamond{opacity:.4;}
-.milestone.status-done .milestone-label{opacity:.4;text-decoration:line-through;}
-
-.mobile-task-card.milestone-card{border-style:dashed;}
 .bar.art{background:var(--art-bg);color:var(--art);border-color:rgba(232,121,179,0.35);}
 .bar.plan{background:var(--plan-bg);color:var(--plan);border-color:rgba(91,147,230,0.35);}
 .bar.dev{background:var(--dev-bg);color:var(--dev);border-color:rgba(79,191,138,0.35);}
