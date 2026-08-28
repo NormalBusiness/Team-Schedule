@@ -45,6 +45,7 @@ create table if not exists tasks (
   status text not null default 'todo' check (status in ('todo', 'doing', 'done')),
   description text,
   feedback_start date,
+  is_milestone boolean not null default false,
   created_at timestamptz default now(),
   created_by uuid references auth.users(id),
   constraint tasks_feedback_start_check check (feedback_start is null or (feedback_start >= start_date and feedback_start <= end_date))

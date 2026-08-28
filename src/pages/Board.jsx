@@ -30,7 +30,7 @@ function isDueSoon(t) {
   return t.status !== 'done' && !isOverdue(t) && daysBetween(todayISO(), t.end_date) <= 2
 }
 
-const emptyForm = { title: '', category: 'art', assignee: '', status: 'todo', start_date: todayISO(), end_date: addDays(todayISO(), 3), description: '', feedback_start: '' }
+const emptyForm = { title: '', category: 'art', assignee: '', status: 'todo', start_date: todayISO(), end_date: addDays(todayISO(), 3), description: '', feedback_start: '', isMilestone: false }
 
 export default function Board({ session }) {
   const { projectId } = useParams()
@@ -227,7 +227,7 @@ export default function Board({ session }) {
     setForm({
       title: t.title, category: t.category, assignee: t.assignee || '',
       status: t.status, start_date: t.start_date, end_date: t.end_date, description: t.description || '',
-      feedback_start: t.feedback_start || '',
+      feedback_start: t.feedback_start || '', isMilestone: !!t.is_milestone,
     })
     setAssigneeError('')
     setAssigneeOpen(false)
@@ -273,8 +273,9 @@ export default function Board({ session }) {
   async function saveTask(e) {
     e.preventDefault()
     if (!form.title.trim()) { alert('업무 제목을 입력하세요.'); return }
-    if (!form.start_date || !form.end_date || form.start_date > form.end_date) { alert('시작일과 종료일을 확인하세요.'); return }
-    if (form.feedback_start && (form.feedback_start < form.start_date || form.feedback_start > form.end_date)) {
+    const endDate = form.isMilestone ? form.start_date : form.end_date
+    if (!form.start_date || !endDate || form.start_date > endDate) { alert('시작일과 종료일을 확인하세요.'); return }
+    if (!form.isMilestone && form.feedback_start && (form.feedback_start < form.start_date || form.feedback_start > endDate)) {
       alert('피드백 시작일은 일정 기간 내에 있어야 해요.')
       return
     }
@@ -286,9 +287,10 @@ export default function Board({ session }) {
     }
     const payload = {
       title: form.title.trim(), category: form.category, assignee: trimmedAssignee,
-      status: form.status, start_date: form.start_date, end_date: form.end_date,
+      status: form.status, start_date: form.start_date, end_date: endDate,
       description: form.description.trim(), project_id: projectId, created_by: session.user.id,
-      feedback_start: form.feedback_start || null,
+      feedback_start: form.isMilestone ? null : (form.feedback_start || null),
+      is_milestone: form.isMilestone,
     }
     if (editingId) {
       await supabase.from('tasks').update(payload).eq('id', editingId)
@@ -534,7 +536,7 @@ export default function Board({ session }) {
       </div>
 
       <div className="legend-hint">
-        <span className="legend-swatch"></span> 빗금 = 피드백(컨펌) 기간
+        <span className="legend-swatch"></span> 빗금 = 피드백(컨펌) 기간 &nbsp;·&nbsp; ◆ = 중간 컨펌(마일스톤)
       </div>
 
       {isMobile && (
@@ -556,14 +558,15 @@ export default function Board({ session }) {
                   const overdue = isOverdue(t)
                   const dueSoon = isDueSoon(t)
                   return (
-                    <div key={t.id} className={`mobile-task-card ${cat} ${t.status === 'done' ? 'status-done' : ''}`} onClick={() => setDetailTask(t)}>
-                      <div className="mobile-task-title">{t.title}</div>
+                    <div key={t.id} className={`mobile-task-card ${cat} ${t.status === 'done' ? 'status-done' : ''} ${t.is_milestone ? 'milestone-card' : ''}`} onClick={() => setDetailTask(t)}>
+                      <div className="mobile-task-title">{t.is_milestone && '◆ '}{t.title}</div>
                       <div className="mobile-task-meta">
                         <span>{t.assignee || '미지정'}</span>
-                        <span>{t.start_date} ~ {t.end_date}</span>
+                        <span>{t.is_milestone ? t.start_date : `${t.start_date} ~ ${t.end_date}`}</span>
                       </div>
                       <div className="mobile-task-badges">
                         <span className="badge status">{STATUS_LABEL[t.status]}</span>
+                        {t.is_milestone && <span className="badge">중간 컨펌</span>}
                         {overdue && <span className="badge danger">기한 초과</span>}
                         {dueSoon && <span className="badge warning">마감 임박</span>}
                         {t.feedback_start && <span className="badge warning">피드백중</span>}
@@ -663,19 +666,31 @@ export default function Board({ session }) {
                             <div key={i} className="grid-line" style={{ left: x }}></div>
                           ))}
                           <div className="today-line" style={{ left: todayLeft }}></div>
-                          <div
-                            className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''} ${isDraggingTask ? 'dragging' : ''}`}
-                            style={{ left, width }}
-                            onMouseDown={(e) => handleBarMouseDown(t, e, 'move')}
-                            title={t.feedback_start ? `작업: ${t.start_date}~${addDays(t.feedback_start, -1)} / 피드백: ${t.feedback_start}~${t.end_date}` : t.title}
-                          >
-                            <div className="bar-handle bar-handle-left" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-start')}></div>
-                            {feedbackLeft !== null && (
-                              <div className="bar-feedback" style={{ left: feedbackLeft, width: feedbackWidth }}></div>
-                            )}
-                            <span className="bar-label">{t.title}</span>
-                            <div className="bar-handle bar-handle-right" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-end')}></div>
-                          </div>
+                          {t.is_milestone ? (
+                            <div
+                              className={`milestone ${cat} ${t.status === 'done' ? 'status-done' : ''} ${isDraggingTask ? 'dragging' : ''}`}
+                              style={{ left: left + width / 2 - 7 }}
+                              onMouseDown={(e) => handleBarMouseDown(t, e, 'move')}
+                              title={`중간 컨펌: ${t.title} (${dispStart})`}
+                            >
+                              <span className="milestone-diamond"></span>
+                              <span className="milestone-label">{t.title}</span>
+                            </div>
+                          ) : (
+                            <div
+                              className={`bar ${cat} ${t.status === 'done' ? 'status-done' : ''} ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''} ${isDraggingTask ? 'dragging' : ''}`}
+                              style={{ left, width }}
+                              onMouseDown={(e) => handleBarMouseDown(t, e, 'move')}
+                              title={t.feedback_start ? `작업: ${t.start_date}~${addDays(t.feedback_start, -1)} / 피드백: ${t.feedback_start}~${t.end_date}` : t.title}
+                            >
+                              <div className="bar-handle bar-handle-left" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-start')}></div>
+                              {feedbackLeft !== null && (
+                                <div className="bar-feedback" style={{ left: feedbackLeft, width: feedbackWidth }}></div>
+                              )}
+                              <span className="bar-label">{t.title}</span>
+                              <div className="bar-handle bar-handle-right" onMouseDown={(e) => handleBarMouseDown(t, e, 'resize-end')}></div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
@@ -691,16 +706,23 @@ export default function Board({ session }) {
       <div className={`overlay ${detailTask ? 'open' : ''}`} onClick={(e) => e.target === e.currentTarget && setDetailTask(null)}>
         {detailTask && (
           <div className="modal">
-            <div className="detail-title">{detailTask.title}</div>
+            <div className="detail-title">{detailTask.is_milestone && '◆ '}{detailTask.title}</div>
             <div className="detail-meta">
               <span className={`badge ${detailTask.category}`}>{CAT_LABEL[detailTask.category]}</span>
               <span className="badge status">{STATUS_LABEL[detailTask.status]}</span>
+              {detailTask.is_milestone && <span className="badge">중간 컨펌</span>}
               {isOverdue(detailTask) && <span className="badge danger">기한 초과</span>}
               {isDueSoon(detailTask) && <span className="badge warning">마감 임박</span>}
             </div>
             <div className="detail-row"><span>담당자</span><span>{detailTask.assignee || '미지정'}</span></div>
-            <div className="detail-row"><span>시작일</span><span>{detailTask.start_date}</span></div>
-            <div className="detail-row"><span>종료일</span><span>{detailTask.end_date}</span></div>
+            {detailTask.is_milestone ? (
+              <div className="detail-row"><span>컨펌 날짜</span><span>{detailTask.start_date}</span></div>
+            ) : (
+              <>
+                <div className="detail-row"><span>시작일</span><span>{detailTask.start_date}</span></div>
+                <div className="detail-row"><span>종료일</span><span>{detailTask.end_date}</span></div>
+              </>
+            )}
             {detailTask.feedback_start && (
               <div className="detail-row"><span>피드백 기간</span><span>{detailTask.feedback_start} ~ {detailTask.end_date}</span></div>
             )}
@@ -774,32 +796,54 @@ export default function Board({ session }) {
                 </select>
               </div>
             </div>
+            <div className="field">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={form.isMilestone}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setForm((f) => ({ ...f, isMilestone: checked, end_date: checked ? f.start_date : f.end_date, feedback_start: checked ? '' : f.feedback_start }))
+                  }}
+                />
+                이 일정을 중간 컨펌(마일스톤)으로 만들기
+              </label>
+              <div className="field-hint">업무 사이에 날짜 하나로 표시되는 체크포인트예요. 간트차트에 ◆ 마름모로 표시돼요.</div>
+            </div>
             <div className="field-row">
               <div className="field">
-                <label>시작일</label>
-                <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>종료일</label>
-                <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
-              </div>
-            </div>
-            <div className="field">
-              <label>피드백(컨펌) 시작일 — 선택</label>
-              <div className="field-row" style={{ alignItems: 'center' }}>
+                <label>시작일{form.isMilestone ? ' (컨펌 날짜)' : ''}</label>
                 <input
                   type="date"
-                  value={form.feedback_start}
-                  min={form.start_date}
-                  max={form.end_date}
-                  onChange={(e) => setForm({ ...form, feedback_start: e.target.value })}
+                  value={form.start_date}
+                  onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value, end_date: f.isMilestone ? e.target.value : f.end_date }))}
                 />
-                {form.feedback_start && (
-                  <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, feedback_start: '' })}>없음</button>
-                )}
               </div>
-              <div className="field-hint">지정한 날짜부터 종료일까지가 피드백 기간이 돼요. 막대에 빗금으로 표시돼요.</div>
+              {!form.isMilestone && (
+                <div className="field">
+                  <label>종료일</label>
+                  <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+                </div>
+              )}
             </div>
+            {!form.isMilestone && (
+              <div className="field">
+                <label>피드백(컨펌) 시작일 — 선택</label>
+                <div className="field-row" style={{ alignItems: 'center' }}>
+                  <input
+                    type="date"
+                    value={form.feedback_start}
+                    min={form.start_date}
+                    max={form.end_date}
+                    onChange={(e) => setForm({ ...form, feedback_start: e.target.value })}
+                  />
+                  {form.feedback_start && (
+                    <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, feedback_start: '' })}>없음</button>
+                  )}
+                </div>
+                <div className="field-hint">지정한 날짜부터 종료일까지가 피드백 기간이 돼요. 막대에 빗금으로 표시돼요.</div>
+              </div>
+            )}
             <div className="field">
               <label>세부 내역</label>
               <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="업무에 대한 상세 설명, 참고사항 등을 입력하세요" />
